@@ -82,6 +82,7 @@
 
 pub mod consolidation;
 pub mod fsrs;
+pub mod fts;
 pub mod memory;
 pub mod storage;
 

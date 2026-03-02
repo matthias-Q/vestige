@@ -32,7 +32,7 @@ path = "src/bin/cli.rs"
 # ============================================================================
 # Includes: FSRS-6, spreading activation, synaptic tagging, hippocampal indexing,
 # memory states, context memory, importance signals, dreams, and more
-vestige-core = { version = "2.0.1", path = "../vestige-core" }
+vestige-core = { version = "2.0.1", path = "../vestige-core", default-features = false, features = ["bundled-sqlite"] }
 
 # ============================================================================
 # MCP Server Dependencies
