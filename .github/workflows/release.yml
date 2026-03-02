@@ -26,15 +26,19 @@ jobs:
           - target: x86_64-unknown-linux-gnu
             os: ubuntu-latest
             archive: tar.gz
+            cargo_flags: ""
           - target: x86_64-pc-windows-msvc
             os: windows-latest
             archive: zip
+            cargo_flags: ""
           - target: x86_64-apple-darwin
             os: macos-14
             archive: tar.gz
+            cargo_flags: "--no-default-features"
           - target: aarch64-apple-darwin
             os: macos-latest
             archive: tar.gz
+            cargo_flags: ""
 
     steps:
       - name: Checkout
@@ -46,7 +50,7 @@ jobs:
           targets: ${{ matrix.target }}
 
       - name: Build
-        run: cargo build --package vestige-mcp --release --target ${{ matrix.target }}
+        run: cargo build --package vestige-mcp --release --target ${{ matrix.target }} ${{ matrix.cargo_flags }}
 
       - name: Package (Unix)
         if: matrix.os != 'windows-latest'
