@@ -829,9 +829,10 @@ pub async fn trigger_consolidation(
 pub async fn retention_distribution(
     State(state): State<AppState>,
 ) -> Result<Json<Value>, StatusCode> {
+    // Cap at 1000 to prevent excessive memory usage on large databases
     let nodes = state
         .storage
-        .get_all_nodes(10000, 0)
+        .get_all_nodes(1000, 0)
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     // Build distribution buckets

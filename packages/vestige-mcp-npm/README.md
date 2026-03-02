@@ -1,4 +1,4 @@
-# @vestige/mcp
+# vestige-mcp-server
 
 Vestige MCP Server - A synthetic hippocampus for AI assistants.
 
@@ -120,10 +120,10 @@ Fix the MCP connection first, then the model will download automatically.
 
 | Platform | Architecture |
 |----------|--------------|
-| macOS | ARM64 (Apple Silicon) |
+| macOS | ARM64 (Apple Silicon), x86_64 (Intel) |
 | Linux | x86_64 |
 | Windows | x86_64 |
 
 ## License
 
-MIT
+AGPL-3.0-only

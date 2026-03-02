@@ -1,8 +1,8 @@
 [package]
 name = "vestige-core"
-version = "2.0.0"
+version = "2.0.1"
 edition = "2024"
-rust-version = "1.85"
+rust-version = "1.91"
 authors = ["Vestige Team"]
 description = "Cognitive memory engine - FSRS-6 spaced repetition, semantic embeddings, and temporal memory"
 license = "AGPL-3.0-only"
@@ -37,11 +37,6 @@ qwen3-reranker = ["embeddings", "fastembed/qwen3"]
 # Metal GPU acceleration on Apple Silicon (significantly faster inference)
 metal = ["fastembed/metal"]
 
-# Full feature set including MCP protocol support
-full = ["embeddings", "vector-search"]
-
-# MCP (Model Context Protocol) support for Claude integration
-mcp = []
 
 [dependencies]
 # Serialization

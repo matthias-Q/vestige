@@ -204,7 +204,7 @@ async fn execute_remember_decision(
     // Build content with structured format (ADR-like)
     let mut content = format!(
         "# Decision: {}\n\n## Context\n\n{}\n\n## Decision\n\n{}",
-        &decision[..decision.len().min(50)],
+        &decision[..decision.floor_char_boundary(50)],
         rationale,
         decision
     );

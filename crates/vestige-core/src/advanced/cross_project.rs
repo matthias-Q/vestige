@@ -431,12 +431,11 @@ impl CrossProjectLearner {
 
         // Check each trigger
         for trigger in &pattern.pattern.triggers {
-            if let Some((matches, reason)) = self.check_trigger(trigger, context) {
-                if matches {
+            if let Some((matches, reason)) = self.check_trigger(trigger, context)
+                && matches {
                     match_scores.push(trigger.confidence);
                     match_reasons.push(reason);
                 }
-            }
         }
 
         if match_scores.is_empty() {
@@ -547,12 +546,11 @@ impl CrossProjectLearner {
 
         let success_rate = success_count as f64 / total_count as f64;
 
-        if let Ok(mut patterns) = self.patterns.write() {
-            if let Some(pattern) = patterns.get_mut(pattern_id) {
+        if let Ok(mut patterns) = self.patterns.write()
+            && let Some(pattern) = patterns.get_mut(pattern_id) {
                 pattern.success_rate = success_rate;
                 pattern.application_count = total_count as u32;
             }
-        }
     }
 
     fn extract_patterns_from_category(
@@ -596,8 +594,8 @@ impl CrossProjectLearner {
                 // Create a potential pattern (simplified)
                 let pattern_id = format!("auto-{}-{}", category_to_string(&category), keyword);
 
-                if let Ok(mut patterns) = self.patterns.write() {
-                    if !patterns.contains_key(&pattern_id) {
+                if let Ok(mut patterns) = self.patterns.write()
+                    && !patterns.contains_key(&pattern_id) {
                         patterns.insert(
                             pattern_id.clone(),
                             UniversalPattern {
@@ -629,7 +627,6 @@ impl CrossProjectLearner {
                             },
                         );
                     }
-                }
             }
         }
     }

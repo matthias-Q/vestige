@@ -609,13 +609,13 @@ impl Storage {
                     node_id,
                     embedding.to_bytes(),
                     EMBEDDING_DIMENSIONS as i32,
-                    "all-MiniLM-L6-v2",
+                    "nomic-embed-text-v1.5",
                     now.to_rfc3339(),
                 ],
             )?;
 
             writer.execute(
-                "UPDATE knowledge_nodes SET has_embedding = 1, embedding_model = 'all-MiniLM-L6-v2' WHERE id = ?1",
+                "UPDATE knowledge_nodes SET has_embedding = 1, embedding_model = 'nomic-embed-text-v1.5' WHERE id = ?1",
                 params![node_id],
             )?;
         }
@@ -639,7 +639,7 @@ impl Storage {
             .prepare("SELECT * FROM knowledge_nodes WHERE id = ?1")?;
 
         let node = stmt
-            .query_row(params![id], |row| Self::row_to_node(row))
+            .query_row(params![id], Self::row_to_node)
             .optional()?;
         Ok(node)
     }
@@ -1058,7 +1058,7 @@ impl Storage {
              LIMIT ?2",
         )?;
 
-        let nodes = stmt.query_map(params![now, limit], |row| Self::row_to_node(row))?;
+        let nodes = stmt.query_map(params![now, limit], Self::row_to_node)?;
 
         let mut result = Vec::new();
         for node in nodes {
@@ -1150,7 +1150,7 @@ impl Storage {
         )?;
 
         let embedding_model: Option<String> = if nodes_with_embeddings > 0 {
-            Some("all-MiniLM-L6-v2".to_string())
+            Some("nomic-embed-text-v1.5".to_string())
         } else {
             None
         };
@@ -1182,6 +1182,14 @@ impl Storage {
             .map_err(|_| StorageError::Init("Writer lock poisoned".into()))?;
         let rows = writer
             .execute("DELETE FROM knowledge_nodes WHERE id = ?1", params![id])?;
+
+        // Clean up vector index to prevent stale search results
+        #[cfg(all(feature = "embeddings", feature = "vector-search"))]
+        if rows > 0
+            && let Ok(mut index) = self.vector_index.lock() {
+                let _ = index.remove(id);
+            }
+
         Ok(rows > 0)
     }
 
@@ -1199,7 +1207,7 @@ impl Storage {
              LIMIT ?2",
         )?;
 
-        let nodes = stmt.query_map(params![sanitized_query, limit], |row| Self::row_to_node(row))?;
+        let nodes = stmt.query_map(params![sanitized_query, limit], Self::row_to_node)?;
 
         let mut result = Vec::new();
         for node in nodes {
@@ -1218,7 +1226,7 @@ impl Storage {
              LIMIT ?1 OFFSET ?2",
         )?;
 
-        let nodes = stmt.query_map(params![limit, offset], |row| Self::row_to_node(row))?;
+        let nodes = stmt.query_map(params![limit, offset], Self::row_to_node)?;
 
         let mut result = Vec::new();
         for node in nodes {
@@ -1268,7 +1276,7 @@ impl Storage {
                      ORDER BY retention_strength DESC, created_at DESC
                      LIMIT ?2",
                 )?;
-                let rows = stmt.query_map(params![node_type, limit], |row| Self::row_to_node(row))?;
+                let rows = stmt.query_map(params![node_type, limit], Self::row_to_node)?;
                 let mut nodes = Vec::new();
                 for node in rows.flatten() {
                     nodes.push(node);
@@ -1641,7 +1649,7 @@ impl Storage {
              LIMIT ?2",
         )?;
 
-        let nodes = stmt.query_map(params![timestamp, limit], |row| Self::row_to_node(row))?;
+        let nodes = stmt.query_map(params![timestamp, limit], Self::row_to_node)?;
 
         let mut result = Vec::new();
         for node in nodes {
@@ -1704,7 +1712,7 @@ impl Storage {
             .map_err(|_| StorageError::Init("Reader lock poisoned".into()))?;
         let mut stmt = reader.prepare(query)?;
         let params_refs: Vec<&dyn rusqlite::ToSql> = params.iter().map(|p| p.as_ref()).collect();
-        let nodes = stmt.query_map(params_refs.as_slice(), |row| Self::row_to_node(row))?;
+        let nodes = stmt.query_map(params_refs.as_slice(), Self::row_to_node)?;
 
         let mut result = Vec::new();
         for node in nodes {
@@ -2404,12 +2412,11 @@ impl Storage {
     /// Generate missing embeddings
     #[cfg(all(feature = "embeddings", feature = "vector-search"))]
     fn generate_missing_embeddings(&self) -> Result<i64> {
-        if !self.embedding_service.is_ready() {
-            if let Err(e) = self.embedding_service.init() {
+        if !self.embedding_service.is_ready()
+            && let Err(e) = self.embedding_service.init() {
                 tracing::warn!("Could not initialize embedding model: {}", e);
                 return Ok(0);
             }
-        }
 
         let nodes: Vec<(String, String)> = {
             let reader = self.reader.lock()
@@ -2615,7 +2622,7 @@ impl Storage {
             "SELECT * FROM intentions WHERE id = ?1"
         )?;
 
-        stmt.query_row(params![id], |row| Self::row_to_intention(row))
+        stmt.query_row(params![id], Self::row_to_intention)
             .optional()
             .map_err(StorageError::from)
     }
@@ -2628,7 +2635,7 @@ impl Storage {
             "SELECT * FROM intentions WHERE status = 'active' ORDER BY priority DESC, created_at ASC"
         )?;
 
-        let rows = stmt.query_map([], |row| Self::row_to_intention(row))?;
+        let rows = stmt.query_map([], Self::row_to_intention)?;
         let mut result = Vec::new();
         for row in rows {
             result.push(row?);
@@ -2644,7 +2651,7 @@ impl Storage {
             "SELECT * FROM intentions WHERE status = ?1 ORDER BY priority DESC, created_at ASC"
         )?;
 
-        let rows = stmt.query_map(params![status], |row| Self::row_to_intention(row))?;
+        let rows = stmt.query_map(params![status], Self::row_to_intention)?;
         let mut result = Vec::new();
         for row in rows {
             result.push(row?);
@@ -2683,7 +2690,7 @@ impl Storage {
             "SELECT * FROM intentions WHERE status = 'active' AND deadline IS NOT NULL AND deadline < ?1 ORDER BY deadline ASC"
         )?;
 
-        let rows = stmt.query_map(params![now], |row| Self::row_to_intention(row))?;
+        let rows = stmt.query_map(params![now], Self::row_to_intention)?;
         let mut result = Vec::new();
         for row in rows {
             result.push(row?);
@@ -2775,7 +2782,7 @@ impl Storage {
             "SELECT * FROM insights ORDER BY generated_at DESC LIMIT ?1"
         )?;
 
-        let rows = stmt.query_map(params![limit], |row| Self::row_to_insight(row))?;
+        let rows = stmt.query_map(params![limit], Self::row_to_insight)?;
         let mut result = Vec::new();
         for row in rows {
             result.push(row?);
@@ -2791,7 +2798,7 @@ impl Storage {
             "SELECT * FROM insights WHERE feedback IS NULL ORDER BY novelty_score DESC"
         )?;
 
-        let rows = stmt.query_map([], |row| Self::row_to_insight(row))?;
+        let rows = stmt.query_map([], Self::row_to_insight)?;
         let mut result = Vec::new();
         for row in rows {
             result.push(row?);
@@ -2874,7 +2881,7 @@ impl Storage {
             "SELECT * FROM memory_connections WHERE source_id = ?1 OR target_id = ?1 ORDER BY strength DESC"
         )?;
 
-        let rows = stmt.query_map(params![memory_id], |row| Self::row_to_connection(row))?;
+        let rows = stmt.query_map(params![memory_id], Self::row_to_connection)?;
         let mut result = Vec::new();
         for row in rows {
             result.push(row?);
@@ -2890,7 +2897,7 @@ impl Storage {
             "SELECT * FROM memory_connections ORDER BY strength DESC"
         )?;
 
-        let rows = stmt.query_map([], |row| Self::row_to_connection(row))?;
+        let rows = stmt.query_map([], Self::row_to_connection)?;
         let mut result = Vec::new();
         for row in rows {
             result.push(row?);
@@ -2988,7 +2995,7 @@ impl Storage {
             "SELECT * FROM memory_states WHERE memory_id = ?1"
         )?;
 
-        stmt.query_row(params![memory_id], |row| Self::row_to_memory_state(row))
+        stmt.query_row(params![memory_id], Self::row_to_memory_state)
             .optional()
             .map_err(StorageError::from)
     }
@@ -3241,14 +3248,13 @@ impl Storage {
                 let name = entry.file_name();
                 let name_str = name.to_string_lossy();
                 // Parse vestige-YYYYMMDD-HHMMSS.db
-                if let Some(ts_part) = name_str.strip_prefix("vestige-").and_then(|s| s.strip_suffix(".db")) {
-                    if let Ok(naive) = chrono::NaiveDateTime::parse_from_str(ts_part, "%Y%m%d-%H%M%S") {
+                if let Some(ts_part) = name_str.strip_prefix("vestige-").and_then(|s| s.strip_suffix(".db"))
+                    && let Ok(naive) = chrono::NaiveDateTime::parse_from_str(ts_part, "%Y%m%d-%H%M%S") {
                         let dt = naive.and_utc();
                         if latest.as_ref().is_none_or(|l| dt > *l) {
                             latest = Some(dt);
                         }
                     }
-                }
             }
         }
 
@@ -3406,12 +3412,37 @@ impl Storage {
     /// Auto-GC memories below threshold (used by retention target system)
     pub fn gc_below_retention(&self, threshold: f64, min_age_days: i64) -> Result<i64> {
         let cutoff = (Utc::now() - Duration::days(min_age_days)).to_rfc3339();
+
+        // Collect IDs first for vector index cleanup
+        #[cfg(all(feature = "embeddings", feature = "vector-search"))]
+        let doomed_ids: Vec<String> = {
+            let reader = self.reader.lock()
+                .map_err(|_| StorageError::Init("Reader lock poisoned".into()))?;
+            let mut stmt = reader.prepare(
+                "SELECT id FROM knowledge_nodes WHERE retention_strength < ?1 AND created_at < ?2",
+            )?;
+            stmt.query_map(params![threshold, cutoff], |row| row.get(0))?
+                .filter_map(|r| r.ok())
+                .collect()
+        };
+
         let writer = self.writer.lock()
             .map_err(|_| StorageError::Init("Writer lock poisoned".into()))?;
         let deleted = writer.execute(
             "DELETE FROM knowledge_nodes WHERE retention_strength < ?1 AND created_at < ?2",
             params![threshold, cutoff],
         )? as i64;
+        drop(writer);
+
+        // Clean up vector index
+        #[cfg(all(feature = "embeddings", feature = "vector-search"))]
+        if deleted > 0
+            && let Ok(mut index) = self.vector_index.lock() {
+                for id in &doomed_ids {
+                    let _ = index.remove(id);
+                }
+            }
+
         Ok(deleted)
     }
 
@@ -3489,7 +3520,7 @@ impl Storage {
         let mut stmt = reader.prepare(
             "SELECT * FROM knowledge_nodes WHERE waking_tag = TRUE ORDER BY waking_tag_at DESC LIMIT ?1"
         )?;
-        let nodes = stmt.query_map(params![limit], |row| Self::row_to_node(row))?;
+        let nodes = stmt.query_map(params![limit], Self::row_to_node)?;
         let mut result = Vec::new();
         for node in nodes {
             result.push(node?);

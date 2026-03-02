@@ -1075,11 +1075,10 @@ impl ContentStore {
     pub fn retrieve(&self, pointer: &ContentPointer) -> Result<Vec<u8>> {
         // Check cache first
         let cache_key = self.cache_key(pointer);
-        if let Ok(cache) = self.cache.read() {
-            if let Some(data) = cache.get(&cache_key) {
+        if let Ok(cache) = self.cache.read()
+            && let Some(data) = cache.get(&cache_key) {
                 return Ok(data.clone());
             }
-        }
 
         // Retrieve from storage
         let data = match &pointer.storage_location {
@@ -1131,8 +1130,8 @@ impl ContentStore {
             return;
         }
 
-        if let Ok(mut cache) = self.cache.write() {
-            if let Ok(mut size) = self.current_cache_size.write() {
+        if let Ok(mut cache) = self.cache.write()
+            && let Ok(mut size) = self.current_cache_size.write() {
                 // Evict if necessary
                 while *size + data_size > self.max_cache_size && !cache.is_empty() {
                     // Simple eviction: remove first entry
@@ -1148,7 +1147,6 @@ impl ContentStore {
                 cache.insert(key.to_string(), data.to_vec());
                 *size += data_size;
             }
-        }
     }
 
     /// Retrieve from SQLite (placeholder - to be integrated with Storage)
@@ -1394,8 +1392,8 @@ impl HippocampalIndex {
             let mut match_result = IndexMatch::new(index.clone());
 
             // Calculate semantic score
-            if let Some(ref query_embedding) = query.semantic_embedding {
-                if !index.semantic_summary.is_empty() {
+            if let Some(ref query_embedding) = query.semantic_embedding
+                && !index.semantic_summary.is_empty() {
                     let query_compressed = self.compress_embedding(query_embedding);
                     match_result.semantic_score =
                         self.cosine_similarity(&query_compressed, &index.semantic_summary);
@@ -1404,7 +1402,6 @@ impl HippocampalIndex {
                         continue;
                     }
                 }
-            }
 
             // Calculate text score
             if let Some(ref text_query) = query.text_query {
@@ -1444,25 +1441,22 @@ impl HippocampalIndex {
     /// Check if an index passes query filters
     fn passes_filters(&self, index: &MemoryIndex, query: &IndexQuery) -> bool {
         // Time range filter
-        if let Some((start, end)) = query.time_range {
-            if index.temporal_marker.created_at < start || index.temporal_marker.created_at > end {
+        if let Some((start, end)) = query.time_range
+            && (index.temporal_marker.created_at < start || index.temporal_marker.created_at > end) {
                 return false;
             }
-        }
 
         // Importance flags filter
-        if let Some(ref required) = query.required_flags {
-            if !index.matches_importance(required.to_bits()) {
+        if let Some(ref required) = query.required_flags
+            && !index.matches_importance(required.to_bits()) {
                 return false;
             }
-        }
 
         // Node type filter
-        if let Some(ref types) = query.node_types {
-            if !types.contains(&index.node_type) {
+        if let Some(ref types) = query.node_types
+            && !types.contains(&index.node_type) {
                 return false;
             }
-        }
 
         true
     }
@@ -1579,11 +1573,10 @@ impl HippocampalIndex {
         let mut memories = Vec::with_capacity(matches.len());
         for m in matches {
             // Record access
-            if let Ok(mut indices) = self.indices.write() {
-                if let Some(index) = indices.get_mut(&m.index.memory_id) {
+            if let Ok(mut indices) = self.indices.write()
+                && let Some(index) = indices.get_mut(&m.index.memory_id) {
                     index.record_access();
                 }
-            }
 
             match self.retrieve_content(&m.index) {
                 Ok(memory) => memories.push(memory),
@@ -1887,20 +1880,19 @@ impl HippocampalIndex {
         sentiment_magnitude: f64,
     ) -> Result<MemoryBarcode> {
         // Check if already indexed
-        if let Ok(indices) = self.indices.read() {
-            if indices.contains_key(node_id) {
+        if let Ok(indices) = self.indices.read()
+            && indices.contains_key(node_id) {
                 return Err(HippocampalIndexError::MigrationError(
                     "Node already indexed".to_string(),
                 ));
             }
-        }
 
         // Create the index
         let barcode = self.index_memory(node_id, content, node_type, created_at, embedding)?;
 
         // Update importance flags based on existing data
-        if let Ok(mut indices) = self.indices.write() {
-            if let Some(index) = indices.get_mut(node_id) {
+        if let Ok(mut indices) = self.indices.write()
+            && let Some(index) = indices.get_mut(node_id) {
                 // Set high retention flag if applicable
                 if retention_strength > 0.7 {
                     index.importance_flags.set_high_retention(true);
@@ -1919,7 +1911,6 @@ impl HippocampalIndex {
                     ContentType::Text,
                 ));
             }
-        }
 
         Ok(barcode)
     }

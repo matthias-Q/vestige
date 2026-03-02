@@ -516,15 +516,14 @@ impl ReconsolidationManager {
             return false;
         }
 
-        if let Some(state) = self.labile_memories.get_mut(memory_id) {
-            if state.is_within_window(self.labile_window) {
+        if let Some(state) = self.labile_memories.get_mut(memory_id)
+            && state.is_within_window(self.labile_window) {
                 let success = state.add_modification(modification);
                 if success {
                     self.stats.total_modifications += 1;
                 }
                 return success;
             }
-        }
         false
     }
 
@@ -690,15 +689,14 @@ impl ReconsolidationManager {
 
         if let Ok(history) = self.retrieval_history.read() {
             for record in history.iter() {
-                if record.memory_id == memory_id {
-                    if let Some(context) = &record.context {
+                if record.memory_id == memory_id
+                    && let Some(context) = &record.context {
                         for co_id in &context.co_retrieved {
                             if co_id != memory_id {
                                 *co_retrieved.entry(co_id.clone()).or_insert(0) += 1;
                             }
                         }
                     }
-                }
             }
         }
 
@@ -772,7 +770,7 @@ fn truncate(s: &str, max_len: usize) -> &str {
     if s.len() <= max_len {
         s
     } else {
-        &s[..max_len]
+        &s[..s.floor_char_boundary(max_len)]
     }
 }
 

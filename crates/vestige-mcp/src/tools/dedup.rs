@@ -219,7 +219,7 @@ pub async fn execute(
                             .map(|n| {
                                 let c = n.content.replace('\n', " ");
                                 if c.len() > 120 {
-                                    format!("{}...", &c[..120])
+                                    format!("{}...", &c[..c.floor_char_boundary(120)])
                                 } else {
                                     c
                                 }

@@ -694,18 +694,16 @@ impl Intention {
         }
 
         // Check snoozed
-        if let Some(snoozed_until) = self.snoozed_until {
-            if Utc::now() < snoozed_until {
+        if let Some(snoozed_until) = self.snoozed_until
+            && Utc::now() < snoozed_until {
                 return false;
             }
-        }
 
         // Check minimum interval
-        if let Some(last) = self.last_reminded_at {
-            if (Utc::now() - last) < Duration::minutes(MIN_REMINDER_INTERVAL_MINUTES) {
+        if let Some(last) = self.last_reminded_at
+            && (Utc::now() - last) < Duration::minutes(MIN_REMINDER_INTERVAL_MINUTES) {
                 return false;
             }
-        }
 
         true
     }
@@ -1267,13 +1265,11 @@ impl ProspectiveMemory {
             // Skip non-active intentions
             if intention.status != IntentionStatus::Active {
                 // Check if snoozed intention should wake
-                if intention.status == IntentionStatus::Snoozed {
-                    if let Some(until) = intention.snoozed_until {
-                        if Utc::now() >= until {
+                if intention.status == IntentionStatus::Snoozed
+                    && let Some(until) = intention.snoozed_until
+                        && Utc::now() >= until {
                             intention.wake();
                         }
-                    }
-                }
                 continue;
             }
 

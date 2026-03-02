@@ -287,11 +287,10 @@ impl ActivationNetwork {
         self.edges.insert((source.clone(), target.clone()), edge);
 
         // Update node's edge list
-        if let Some(node) = self.nodes.get_mut(&source) {
-            if !node.edges.contains(&target) {
+        if let Some(node) = self.nodes.get_mut(&source)
+            && !node.edges.contains(&target) {
                 node.edges.push(target);
             }
-        }
     }
 
     /// Activate a node and spread activation through the network
@@ -314,11 +313,10 @@ impl ActivationNetwork {
 
         while let Some((current_id, current_activation, hops, path)) = queue.pop() {
             // Skip if we've visited this node with higher activation
-            if let Some(&prev_activation) = visited.get(&current_id) {
-                if prev_activation >= current_activation {
+            if let Some(&prev_activation) = visited.get(&current_id)
+                && prev_activation >= current_activation {
                     continue;
                 }
-            }
             visited.insert(current_id.clone(), current_activation);
 
             // Check hop limit

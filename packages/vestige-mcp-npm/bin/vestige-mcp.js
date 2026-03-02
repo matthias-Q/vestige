@@ -13,7 +13,7 @@ if (!fs.existsSync(binaryPath)) {
   console.error('Error: vestige-mcp binary not found.');
   console.error(`Expected at: ${binaryPath}`);
   console.error('');
-  console.error('Try reinstalling: npm install -g @vestige/mcp');
+  console.error('Try reinstalling: npm install -g vestige-mcp-server');
   process.exit(1);
 }
 

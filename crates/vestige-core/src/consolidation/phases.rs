@@ -333,11 +333,10 @@ impl DreamEngine {
         emotion: &EmotionCategory,
     ) -> TriageCategory {
         // High emotional content
-        if matches!(emotion, EmotionCategory::Frustration | EmotionCategory::Urgency | EmotionCategory::Joy | EmotionCategory::Surprise) {
-            if node.sentiment_magnitude > 0.4 {
+        if matches!(emotion, EmotionCategory::Frustration | EmotionCategory::Urgency | EmotionCategory::Joy | EmotionCategory::Surprise)
+            && node.sentiment_magnitude > 0.4 {
                 return TriageCategory::Emotional;
             }
-        }
 
         // Future-relevant (intentions, TODOs)
         let content_lower = node.content.to_lowercase();
@@ -386,7 +385,7 @@ impl DreamEngine {
             .collect();
 
         // Process replay queue in oscillation waves
-        let wave_count = (replay_queue.len() + self.wave_batch_size - 1) / self.wave_batch_size;
+        let wave_count = replay_queue.len().div_ceil(self.wave_batch_size);
 
         for wave_idx in 0..wave_count {
             let wave_start = wave_idx * self.wave_batch_size;
@@ -659,8 +658,8 @@ impl DreamEngine {
             if indices.len() >= 3 && indices.len() <= 10 {
                 pattern_count += 1;
                 // Create a connection between the first and last memory sharing this pattern
-                if let (Some(&first), Some(&last)) = (indices.first(), indices.last()) {
-                    if first != last {
+                if let (Some(&first), Some(&last)) = (indices.first(), indices.last())
+                    && first != last {
                         connections.push(CreativeConnection {
                             memory_a_id: triaged[first].id.clone(),
                             memory_b_id: triaged[last].id.clone(),
@@ -672,7 +671,6 @@ impl DreamEngine {
                             connection_type: CreativeConnectionType::CrossDomain,
                         });
                     }
-                }
             }
         }
 

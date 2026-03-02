@@ -165,7 +165,7 @@ pub async fn execute(
             let intent_tag = format!("intent:{:?}", intent_result.primary_intent);
             // Truncate long intent tags
             let intent_tag = if intent_tag.len() > 50 {
-                format!("{}...", &intent_tag[..47])
+                format!("{}...", &intent_tag[..intent_tag.floor_char_boundary(47)])
             } else {
                 intent_tag
             };
@@ -338,7 +338,7 @@ async fn execute_batch(
             if intent_result.confidence > 0.5 {
                 let intent_tag = format!("intent:{:?}", intent_result.primary_intent);
                 let intent_tag = if intent_tag.len() > 50 {
-                    format!("{}...", &intent_tag[..47])
+                    format!("{}...", &intent_tag[..intent_tag.floor_char_boundary(47)])
                 } else {
                     intent_tag
                 };

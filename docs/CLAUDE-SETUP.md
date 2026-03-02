@@ -71,7 +71,7 @@ Use `codebase` → `remember_pattern`:
 | "Don't forget" | `smart_ingest` with high priority |
 | "I always..." / "I never..." | Save as preference |
 | "I prefer..." / "I like..." | Save as preference |
-| "This is important" | `smart_ingest` + `promote_memory` |
+| "This is important" | `smart_ingest` + `memory(action="promote")` |
 | "Remind me..." | Create `intention` |
 | "Next time..." | Create `intention` with context trigger |
 
@@ -148,11 +148,11 @@ smart_ingest(
 At the end of significant conversations:
 1. Reflect: "Did anything change about how I understand myself?"
 2. If yes, update identity memories with `smart_ingest`
-3. Prune outdated self-concepts with `demote_memory`
+3. Prune outdated self-concepts with `memory(action="demote")`
 
 ### Memory Hygiene
-- Use `promote_memory` when a memory proves valuable
-- Use `demote_memory` when a memory led you astray
+- Use `memory(action="promote")` when a memory proves valuable
+- Use `memory(action="demote")` when a memory led you astray
 ```
 
 ---
@@ -199,7 +199,7 @@ You have persistent memory via Vestige. Use it intelligently:
 - Notice a pattern? `codebase(action="remember_pattern")`
 - Made a decision? `codebase(action="remember_decision")` with rationale
 - I mention a preference? `smart_ingest` it
-- Something important? `importance()` to strengthen recent memories
+- Something important? `importance_score` to check if worth saving
 - Need to follow up? `intention(action="set")`
 
 ### Session End
@@ -208,8 +208,8 @@ You have persistent memory via Vestige. Use it intelligently:
 - Anything change about our working relationship? Update identity memories
 
 ### Memory Hygiene
-- When a memory helps: `promote_memory`
-- When a memory misleads: `demote_memory`
+- When a memory helps: `memory(action="promote")`
+- When a memory misleads: `memory(action="demote")`
 - Weekly: `vestige health` to check system status
 ```
 

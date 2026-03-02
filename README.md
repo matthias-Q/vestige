@@ -6,7 +6,7 @@
 
 [![GitHub stars](https://img.shields.io/github/stars/samvallad33/vestige?style=social)](https://github.com/samvallad33/vestige)
 [![Release](https://img.shields.io/github/v/release/samvallad33/vestige)](https://github.com/samvallad33/vestige/releases/latest)
-[![Tests](https://img.shields.io/badge/tests-734%20passing-brightgreen)](https://github.com/samvallad33/vestige/actions)
+[![Tests](https://img.shields.io/badge/tests-1238%20passing-brightgreen)](https://github.com/samvallad33/vestige/actions)
 [![License](https://img.shields.io/badge/license-AGPL--3.0-blue)](LICENSE)
 [![MCP Compatible](https://img.shields.io/badge/MCP-compatible-green)](https://modelcontextprotocol.io)
 
@@ -25,10 +25,10 @@ Built on 130 years of memory research — FSRS-6 spaced repetition, prediction e
 - **3D Memory Dashboard** — SvelteKit + Three.js neural visualization with real-time WebSocket events, bloom post-processing, force-directed graph layout. Watch your AI's mind in real-time.
 - **WebSocket Event Bus** — Every cognitive operation broadcasts events: memory creation, search, dreaming, consolidation, retention decay
 - **HyDE Query Expansion** — Template-based Hypothetical Document Embeddings for dramatically improved search quality on conceptual queries
-- **Nomic v2 MoE Ready** — fastembed 5.11 with optional Nomic Embed Text v2 MoE (475M params, 8 experts) + Metal GPU acceleration
+- **Nomic v2 MoE (experimental)** — fastembed 5.11 with optional Nomic Embed Text v2 MoE (475M params, 8 experts) + Metal GPU acceleration. Default: v1.5 (8192 token context)
 - **Command Palette** — `Cmd+K` navigation, keyboard shortcuts, responsive mobile layout, PWA installable
 - **FSRS Decay Visualization** — SVG retention curves with predicted decay at 1d/7d/30d, endangered memory alerts
-- **29 cognitive modules** — 734 tests, 77,840+ LOC
+- **29 cognitive modules** — 1,238 tests, 79,600+ LOC
 
 ---
 
@@ -68,10 +68,10 @@ sudo mv vestige-mcp vestige vestige-restore /usr/local/bin/
 
 **npm:**
 ```bash
-npm install -g vestige-mcp
+npm install -g vestige-mcp-server
 ```
 
-**Build from source:**
+**Build from source (requires Rust 1.91+):**
 ```bash
 git clone https://github.com/samvallad33/vestige && cd vestige
 cargo build --release -p vestige-mcp
@@ -267,8 +267,8 @@ At the start of every session:
 
 | Metric | Value |
 |--------|-------|
-| **Language** | Rust 2024 edition |
-| **Codebase** | 77,840+ lines, 734 tests |
+| **Language** | Rust 2024 edition (MSRV 1.91) |
+| **Codebase** | 79,600+ lines, 1,238 tests |
 | **Binary size** | ~20MB |
 | **Embeddings** | Nomic Embed Text v1.5 (768d → 256d Matryoshka, 8192 context) |
 | **Vector search** | USearch HNSW (20x faster than FAISS) |
@@ -276,7 +276,7 @@ At the start of every session:
 | **Storage** | SQLite + FTS5 (optional SQLCipher encryption) |
 | **Dashboard** | SvelteKit 2 + Svelte 5 + Three.js + Tailwind CSS 4 |
 | **Transport** | MCP stdio (JSON-RPC 2.0) + WebSocket |
-| **Cognitive modules** | 29 stateful (15 neuroscience, 12 advanced, 2 search) |
+| **Cognitive modules** | 29 stateful (16 neuroscience, 11 advanced, 2 search) |
 | **First run** | Downloads embedding model (~130MB), then fully offline |
 | **Platforms** | macOS (ARM/Intel), Linux (x86_64), Windows |
 
@@ -376,5 +376,5 @@ AGPL-3.0 — free to use, modify, and self-host. If you offer Vestige as a netwo
 
 <p align="center">
   <i>Built by <a href="https://github.com/samvallad33">@samvallad33</a></i><br>
-  <sub>77,840+ lines of Rust · 29 cognitive modules · 130 years of memory research · one 22MB binary</sub>
+  <sub>79,600+ lines of Rust · 29 cognitive modules · 130 years of memory research · one 22MB binary</sub>
 </p>

@@ -5,6 +5,7 @@
 
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::extract::State;
+use axum::http::{HeaderMap, StatusCode};
 use axum::response::IntoResponse;
 use chrono::Utc;
 use futures_util::{SinkExt, StreamExt};
@@ -15,11 +16,33 @@ use super::events::VestigeEvent;
 use super::state::AppState;
 
 /// WebSocket upgrade handler — GET /ws
+/// Validates Origin header to prevent cross-site WebSocket hijacking.
 pub async fn ws_handler(
+    headers: HeaderMap,
     ws: WebSocketUpgrade,
     State(state): State<AppState>,
 ) -> impl IntoResponse {
-    ws.on_upgrade(move |socket| handle_socket(socket, state))
+    // Validate Origin header (browsers always send it for WebSocket upgrades).
+    // Non-browser clients (curl, wscat) won't have Origin — allowed since localhost-only.
+    match headers.get("origin").and_then(|v| v.to_str().ok()) {
+        Some(origin) => {
+            let allowed = origin.starts_with("http://127.0.0.1:")
+                || origin.starts_with("http://localhost:");
+            #[cfg(debug_assertions)]
+            let allowed = allowed || origin == "http://localhost:5173" || origin == "http://127.0.0.1:5173";
+            if !allowed {
+                warn!("Rejected WebSocket connection from origin: {}", origin);
+                return StatusCode::FORBIDDEN.into_response();
+            }
+        }
+        None => {
+            debug!("WebSocket connection without Origin header (non-browser client)");
+        }
+    }
+    ws.max_frame_size(64 * 1024)
+        .max_message_size(256 * 1024)
+        .on_upgrade(move |socket| handle_socket(socket, state))
+        .into_response()
 }
 
 async fn handle_socket(socket: WebSocket, state: AppState) {

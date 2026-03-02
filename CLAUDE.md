@@ -1,6 +1,6 @@
-# Vestige v1.8.0 — Cognitive Memory System
+# Vestige v2.0.0 — Cognitive Memory System
 
-Vestige is your long-term memory. It implements real neuroscience: FSRS-6 spaced repetition, synaptic tagging, prediction error gating, hippocampal indexing, spreading activation, and 28 stateful cognitive modules. **Use it automatically.**
+Vestige is your long-term memory. It implements real neuroscience: FSRS-6 spaced repetition, synaptic tagging, prediction error gating, hippocampal indexing, spreading activation, and 29 stateful cognitive modules. **Use it automatically.**
 
 ---
 
@@ -27,9 +27,9 @@ Say "Remembering..." then retrieve context before answering.
 
 ---
 
-## The 19 Tools
+## The 21 Tools
 
-### Context Packets (1 tool) — v1.8.0
+### Context Packets (1 tool)
 | Tool | When to Use |
 |------|-------------|
 | `session_context` | **One-call session initialization.** Replaces 5 separate calls (search × 2, intention check, system_status, predict) with a single token-budgeted response. Returns markdown context + `automationTriggers` (needsDream/needsBackup/needsGc) + `expandable` IDs for on-demand full retrieval. Params: `queries` (string[]), `token_budget` (100-10000, default 1000), `context` ({codebase, topics, file}), `include_status/include_intentions/include_predictions` (bool). |
@@ -53,7 +53,7 @@ Say "Remembering..." then retrieve context before answering.
 | `memory_timeline` | Browse memories chronologically. Grouped by day. Filter by type, tags, date range. When user references a time period ("last week", "yesterday"). |
 | `memory_changelog` | Audit trail. Per-memory: state transitions. System-wide: consolidations + recent changes. When debugging memory issues. |
 
-### Cognitive (3 tools) — v1.5.0
+### Cognitive (3 tools)
 | Tool | When to Use |
 |------|-------------|
 | `dream` | Trigger memory consolidation — replays recent memories to discover hidden connections and synthesize insights. At session start if >24h since last dream, after every 50 saves. |
@@ -65,6 +65,12 @@ Say "Remembering..." then retrieve context before answering.
 |------|-------------|
 | `importance_score` | Score content importance before deciding whether to save. 4-channel model: novelty, arousal, reward, attention. Composite > 0.6 = worth saving. |
 | `find_duplicates` | Find near-duplicate memory clusters via cosine similarity. Returns merge/review suggestions. Run when memory count > 700 or on user request. |
+
+### Autonomic (2 tools)
+| Tool | When to Use |
+|------|-------------|
+| `memory_health` | Retention dashboard — avg retention, distribution buckets, trend (improving/declining/stable), recommendation. Lightweight alternative to system_status focused on memory quality. |
+| `memory_graph` | Subgraph export for visualization. Input: center_id or query, depth (1-3), max_nodes. Returns nodes with force-directed layout positions and edges with weights. |
 
 ### Maintenance (5 tools)
 | Tool | When to Use |
@@ -168,11 +174,11 @@ smart_ingest({
 
 ---
 
-## CognitiveEngine — 28 Modules
+## CognitiveEngine — 29 Modules
 
 All modules persist across tool calls as stateful instances:
 
-**Neuroscience (15):** ActivationNetwork, SynapticTaggingSystem, HippocampalIndex, ContextMatcher, AccessibilityCalculator, CompetitionManager, StateUpdateService, ImportanceSignals, NoveltySignal, ArousalSignal, RewardSignal, AttentionSignal, PredictiveMemory, ProspectiveMemory, IntentionParser
+**Neuroscience (16):** ActivationNetwork, SynapticTaggingSystem, HippocampalIndex, ContextMatcher, AccessibilityCalculator, CompetitionManager, StateUpdateService, ImportanceSignals, NoveltySignal, ArousalSignal, RewardSignal, AttentionSignal, EmotionalMemory, PredictiveMemory, ProspectiveMemory, IntentionParser
 
 **Advanced (11):** ImportanceTracker, ReconsolidationManager, IntentDetector, ActivityTracker, MemoryDreamer, MemoryChainBuilder, MemoryCompressor, CrossProjectLearner, AdaptiveEmbedder, SpeculativeRetriever, ConsolidationScheduler
 
@@ -209,12 +215,12 @@ Memory is retrieval. Searching strengthens memory. Search liberally, save aggres
 
 ## Development
 
-- **Crate:** `vestige-mcp` v1.8.0, Rust 2024 edition, Rust 1.93.1
-- **Tests:** 651 tests (313 core + 338 mcp), zero warnings
+- **Crate:** `vestige-mcp` v2.0.1, Rust 2024 edition, MSRV 1.91
+- **Tests:** 1,238 tests, zero warnings
 - **Build:** `cargo build --release -p vestige-mcp`
 - **Features:** `embeddings` + `vector-search` (default on)
 - **Architecture:** `McpServer` holds `Arc<Storage>` + `Arc<Mutex<CognitiveEngine>>`
 - **Storage:** Interior mutability — `Storage` uses `Mutex<Connection>` for reader/writer split, all methods take `&self`. WAL mode for concurrent reads + writes.
 - **Entry:** `src/main.rs` → stdio JSON-RPC server
 - **Tools:** `src/tools/` — one file per tool, each exports `schema()` + `execute()`
-- **Cognitive:** `src/cognitive.rs` — 28-field struct, initialized once at startup
+- **Cognitive:** `src/cognitive.rs` — 29-field struct, initialized once at startup

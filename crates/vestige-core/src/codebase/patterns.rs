@@ -209,8 +209,8 @@ impl PatternDetector {
             .collect();
 
         for pattern in relevant_patterns {
-            if let Some(confidence) = self.calculate_match_confidence(code, &code_lower, pattern) {
-                if confidence >= 0.3 {
+            if let Some(confidence) = self.calculate_match_confidence(code, &code_lower, pattern)
+                && confidence >= 0.3 {
                     matches.push(PatternMatch {
                         pattern: pattern.clone(),
                         confidence,
@@ -218,7 +218,6 @@ impl PatternDetector {
                         suggestions: self.generate_suggestions(pattern, code),
                     });
                 }
-            }
         }
 
         // Sort by confidence

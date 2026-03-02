@@ -358,8 +358,8 @@ impl PredictionModel {
     fn learn(&self, content: &str) {
         let ngrams = self.extract_ngrams(content);
 
-        if let Ok(mut patterns) = self.patterns.write() {
-            if let Ok(mut total) = self.total_count.write() {
+        if let Ok(mut patterns) = self.patterns.write()
+            && let Ok(mut total) = self.total_count.write() {
                 for ngram in ngrams {
                     *patterns.entry(ngram).or_insert(0) += 1;
                     *total += 1;
@@ -370,7 +370,6 @@ impl PredictionModel {
                     self.apply_decay(&mut patterns);
                 }
             }
-        }
     }
 
     fn compute_prediction_error(&self, content: &str) -> f64 {

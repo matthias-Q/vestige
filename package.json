@@ -1,10 +1,10 @@
 {
   "name": "vestige",
-  "version": "1.6.0",
+  "version": "2.0.1",
   "private": true,
   "description": "Cognitive memory for AI - MCP server with FSRS-6 spaced repetition",
   "author": "Sam Valladares",
-  "license": "MIT OR Apache-2.0",
+  "license": "AGPL-3.0-only",
   "repository": {
     "type": "git",
     "url": "https://github.com/samvallad33/vestige"

@@ -48,21 +48,22 @@ pub fn build_router_with_event_tx(
 
 fn build_router_inner(state: AppState, port: u16) -> (Router, AppState) {
 
-    let origins = vec![
+    #[allow(unused_mut)]
+    let mut origins = vec![
         format!("http://127.0.0.1:{}", port)
             .parse::<axum::http::HeaderValue>()
             .expect("valid origin"),
         format!("http://localhost:{}", port)
             .parse::<axum::http::HeaderValue>()
             .expect("valid origin"),
-        // SvelteKit dev server
-        "http://localhost:5173"
-            .parse::<axum::http::HeaderValue>()
-            .expect("valid origin"),
-        "http://127.0.0.1:5173"
-            .parse::<axum::http::HeaderValue>()
-            .expect("valid origin"),
     ];
+
+    // SvelteKit dev server — only in debug builds
+    #[cfg(debug_assertions)]
+    {
+        origins.push("http://localhost:5173".parse::<axum::http::HeaderValue>().expect("valid origin"));
+        origins.push("http://127.0.0.1:5173".parse::<axum::http::HeaderValue>().expect("valid origin"));
+    }
 
     let cors = CorsLayer::new()
         .allow_origin(AllowOrigin::list(origins))
@@ -77,11 +78,39 @@ fn build_router_inner(state: AppState, port: u16) -> (Router, AppState) {
             axum::http::header::AUTHORIZATION,
         ]);
 
+    // Security: restrict WebSocket connections to localhost only (prevents cross-site WS hijacking)
+    let csp_value = format!(
+        "default-src 'self'; \
+         script-src 'self' 'unsafe-inline'; \
+         style-src 'self' 'unsafe-inline'; \
+         img-src 'self' blob: data:; \
+         connect-src 'self' ws://127.0.0.1:{port} ws://localhost:{port}; \
+         font-src 'self' data:; \
+         frame-ancestors 'none'; \
+         base-uri 'self'; \
+         form-action 'self';"
+    );
     let csp = SetResponseHeaderLayer::overriding(
         axum::http::header::CONTENT_SECURITY_POLICY,
-        axum::http::HeaderValue::from_static(
-            "default-src 'self' 'unsafe-inline' 'unsafe-eval' blob: data: ws: wss:",
-        ),
+        axum::http::HeaderValue::from_str(&csp_value).expect("valid CSP header"),
+    );
+
+    // Additional security headers
+    let x_frame_options = SetResponseHeaderLayer::overriding(
+        axum::http::header::X_FRAME_OPTIONS,
+        axum::http::HeaderValue::from_static("DENY"),
+    );
+    let x_content_type_options = SetResponseHeaderLayer::overriding(
+        axum::http::header::X_CONTENT_TYPE_OPTIONS,
+        axum::http::HeaderValue::from_static("nosniff"),
+    );
+    let referrer_policy = SetResponseHeaderLayer::overriding(
+        axum::http::HeaderName::from_static("referrer-policy"),
+        axum::http::HeaderValue::from_static("strict-origin-when-cross-origin"),
+    );
+    let permissions_policy = SetResponseHeaderLayer::overriding(
+        axum::http::HeaderName::from_static("permissions-policy"),
+        axum::http::HeaderValue::from_static("camera=(), microphone=(), geolocation=()"),
     );
 
     let router = Router::new()
@@ -121,7 +150,11 @@ fn build_router_inner(state: AppState, port: u16) -> (Router, AppState) {
             ServiceBuilder::new()
                 .concurrency_limit(50)
                 .layer(cors)
-                .layer(csp),
+                .layer(csp)
+                .layer(x_frame_options)
+                .layer(x_content_type_options)
+                .layer(referrer_policy)
+                .layer(permissions_policy),
         )
         .with_state(state.clone());
 

@@ -37,8 +37,10 @@ pub mod session_context;
 pub mod health;
 pub mod graph;
 
-// Deprecated tools - kept for internal backwards compatibility
-// These modules are intentionally unused in the public API
+// Deprecated/internal tools — not advertised in the public MCP tools/list,
+// but some functions are actively dispatched for backwards compatibility
+// and internal cognitive operations. #[allow(dead_code)] suppresses warnings
+// for the unused schema/struct items within these modules.
 #[allow(dead_code)]
 pub mod checkpoint;
 #[allow(dead_code)]

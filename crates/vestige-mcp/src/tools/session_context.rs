@@ -218,7 +218,7 @@ pub async fn execute(
     let last_dream = storage.get_last_dream().ok().flatten();
     let saves_since_last_dream = match &last_dream {
         Some(dt) => storage.count_memories_since(*dt).unwrap_or(0),
-        None => stats.total_nodes as i64,
+        None => stats.total_nodes,
     };
     let last_backup = Storage::get_last_backup_timestamp();
     let now = Utc::now();
@@ -333,8 +333,8 @@ pub async fn execute(
     // ====================================================================
     // 5. Codebase patterns/decisions (if codebase specified)
     // ====================================================================
-    if let Some(ref ctx) = args.context {
-        if let Some(ref codebase) = ctx.codebase {
+    if let Some(ref ctx) = args.context
+        && let Some(ref codebase) = ctx.codebase {
             let codebase_tag = format!("codebase:{}", codebase);
             let mut cb_lines: Vec<String> = Vec::new();
 
@@ -368,7 +368,6 @@ pub async fn execute(
                 context_parts.push(format!("**Codebase ({}):**\n{}", codebase, cb_lines.join("\n")));
             }
         }
-    }
 
     // ====================================================================
     // 6. Assemble final response
@@ -404,11 +403,10 @@ fn check_intention_triggered(
 
     match trigger.trigger_type.as_deref() {
         Some("time") => {
-            if let Some(ref at) = trigger.at {
-                if let Ok(trigger_time) = DateTime::parse_from_rfc3339(at) {
+            if let Some(ref at) = trigger.at
+                && let Ok(trigger_time) = DateTime::parse_from_rfc3339(at) {
                     return trigger_time.with_timezone(&Utc) <= now;
                 }
-            }
             if let Some(mins) = trigger.in_minutes {
                 let trigger_time = intention.created_at + Duration::minutes(mins);
                 return trigger_time <= now;
@@ -418,29 +416,25 @@ fn check_intention_triggered(
         Some("context") => {
             // Check codebase match
             if let (Some(trigger_cb), Some(current_cb)) = (&trigger.codebase, &ctx.codebase)
-            {
-                if current_cb
+                && current_cb
                     .to_lowercase()
                     .contains(&trigger_cb.to_lowercase())
                 {
                     return true;
                 }
-            }
             // Check file pattern match
-            if let (Some(pattern), Some(file)) = (&trigger.file_pattern, &ctx.file) {
-                if file.contains(pattern.as_str()) {
+            if let (Some(pattern), Some(file)) = (&trigger.file_pattern, &ctx.file)
+                && file.contains(pattern.as_str()) {
                     return true;
                 }
-            }
             // Check topic match
-            if let (Some(topic), Some(topics)) = (&trigger.topic, &ctx.topics) {
-                if topics
+            if let (Some(topic), Some(topics)) = (&trigger.topic, &ctx.topics)
+                && topics
                     .iter()
                     .any(|t| t.to_lowercase().contains(&topic.to_lowercase()))
                 {
                     return true;
                 }
-            }
             false
         }
         _ => false,

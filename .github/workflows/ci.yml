@@ -56,22 +56,20 @@ jobs:
       - name: Install pnpm
         uses: pnpm/action-setup@v4
         with:
-          version: 9
+          version: 10
 
       - name: Install Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: pnpm
-          cache-dependency-path: apps/dashboard/pnpm-lock.yaml
+          cache-dependency-path: pnpm-lock.yaml
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
-        working-directory: apps/dashboard
 
       - name: Build dashboard
-        run: pnpm build
-        working-directory: apps/dashboard
+        run: pnpm --filter dashboard build
 
   release-build:
     name: Release Build (${{ matrix.target }})

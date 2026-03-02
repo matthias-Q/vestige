@@ -850,14 +850,14 @@ impl McpServer {
         match tool_name {
             // -- smart_ingest: memory created/updated --
             "smart_ingest" | "ingest" | "session_checkpoint" => {
-                // Single mode: result has "action" (created/updated/superseded/reinforced)
-                if let Some(action) = result.get("action").and_then(|a| a.as_str()) {
+                // Single mode: result has "decision" (create/update/supersede/reinforce/merge/replace/add_context)
+                if let Some(decision) = result.get("decision").and_then(|a| a.as_str()) {
                     let id = result.get("nodeId").or(result.get("id"))
                         .and_then(|v| v.as_str()).unwrap_or("").to_string();
                     let preview = result.get("contentPreview").or(result.get("content"))
                         .and_then(|v| v.as_str()).unwrap_or("").to_string();
-                    match action {
-                        "created" => {
+                    match decision {
+                        "create" => {
                             let node_type = result.get("nodeType")
                                 .and_then(|v| v.as_str()).unwrap_or("fact").to_string();
                             let tags = result.get("tags")
@@ -868,9 +868,9 @@ impl McpServer {
                                 id, content_preview: preview, node_type, tags, timestamp: now,
                             });
                         }
-                        "updated" | "superseded" | "reinforced" => {
+                        "update" | "supersede" | "reinforce" | "merge" | "replace" | "add_context" => {
                             self.emit(VestigeEvent::MemoryUpdated {
-                                id, content_preview: preview, field: action.to_string(), timestamp: now,
+                                id, content_preview: preview, field: decision.to_string(), timestamp: now,
                             });
                         }
                         _ => {}
@@ -879,20 +879,20 @@ impl McpServer {
                 // Batch mode: result has "results" array
                 if let Some(results) = result.get("results").and_then(|r| r.as_array()) {
                     for item in results {
-                        let action = item.get("action").and_then(|a| a.as_str()).unwrap_or("");
+                        let decision = item.get("decision").and_then(|a| a.as_str()).unwrap_or("");
                         let id = item.get("nodeId").or(item.get("id"))
                             .and_then(|v| v.as_str()).unwrap_or("").to_string();
                         let preview = item.get("contentPreview")
                             .and_then(|v| v.as_str()).unwrap_or("").to_string();
-                        if action == "created" {
+                        if decision == "create" {
                             self.emit(VestigeEvent::MemoryCreated {
                                 id, content_preview: preview,
                                 node_type: "fact".to_string(), tags: vec![], timestamp: now,
                             });
-                        } else if !action.is_empty() {
+                        } else if !decision.is_empty() {
                             self.emit(VestigeEvent::MemoryUpdated {
                                 id, content_preview: preview,
-                                field: action.to_string(), timestamp: now,
+                                field: decision.to_string(), timestamp: now,
                             });
                         }
                     }
@@ -1000,7 +1000,7 @@ impl McpServer {
                 let preview = args.as_ref()
                     .and_then(|a| a.get("content"))
                     .and_then(|v| v.as_str())
-                    .map(|s| if s.len() > 100 { format!("{}...", &s[..100]) } else { s.to_string() })
+                    .map(|s| if s.len() > 100 { format!("{}...", &s[..s.floor_char_boundary(100)]) } else { s.to_string() })
                     .unwrap_or_default();
                 let composite = result.get("compositeScore")
                     .or(result.get("composite_score"))

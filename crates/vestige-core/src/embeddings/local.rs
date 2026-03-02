@@ -181,7 +181,7 @@ impl Embedding {
 
     /// Create from bytes
     pub fn from_bytes(bytes: &[u8]) -> Option<Self> {
-        if bytes.len() % 4 != 0 {
+        if !bytes.len().is_multiple_of(4) {
             return None;
         }
         let vector: Vec<f32> = bytes
@@ -260,9 +260,13 @@ impl EmbeddingService {
 
         let mut model = get_model()?;
 
-        // Truncate if too long
+        // Truncate if too long (char-boundary safe)
         let text = if text.len() > MAX_TEXT_LENGTH {
-            &text[..MAX_TEXT_LENGTH]
+            let mut end = MAX_TEXT_LENGTH;
+            while !text.is_char_boundary(end) && end > 0 {
+                end -= 1;
+            }
+            &text[..end]
         } else {
             text
         };
@@ -295,7 +299,11 @@ impl EmbeddingService {
                 .iter()
                 .map(|t| {
                     if t.len() > MAX_TEXT_LENGTH {
-                        &t[..MAX_TEXT_LENGTH]
+                        let mut end = MAX_TEXT_LENGTH;
+                        while !t.is_char_boundary(end) && end > 0 {
+                            end -= 1;
+                        }
+                        &t[..end]
                     } else {
                         *t
                     }
