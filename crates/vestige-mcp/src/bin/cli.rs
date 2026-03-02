@@ -4,6 +4,7 @@
 
 use std::io::{BufWriter, Write};
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use chrono::{NaiveDate, Utc};
 use clap::{Parser, Subcommand};
@@ -109,6 +110,19 @@ enum Commands {
         #[arg(long)]
         source: Option<String>,
     },
+
+    /// Start standalone HTTP MCP server (no stdio, for remote access)
+    Serve {
+        /// HTTP transport port
+        #[arg(long, default_value = "3928")]
+        port: u16,
+        /// Also start the dashboard
+        #[arg(long)]
+        dashboard: bool,
+        /// Dashboard port
+        #[arg(long, default_value = "3927")]
+        dashboard_port: u16,
+    },
 }
 
 fn main() -> anyhow::Result<()> {
@@ -139,6 +153,11 @@ fn main() -> anyhow::Result<()> {
             node_type,
             source,
         } => run_ingest(content, tags, node_type, source),
+        Commands::Serve {
+            port,
+            dashboard,
+            dashboard_port,
+        } => run_serve(port, dashboard, dashboard_port),
     }
 }
 
@@ -964,6 +983,82 @@ fn run_dashboard(port: u16, open_browser: bool) -> anyhow::Result<()> {
         vestige_mcp::dashboard::start_dashboard(storage, None, port, open_browser)
             .await
             .map_err(|e| anyhow::anyhow!("Dashboard error: {}", e))
+    })
+}
+
+/// Start standalone HTTP MCP server (no stdio transport)
+fn run_serve(port: u16, with_dashboard: bool, dashboard_port: u16) -> anyhow::Result<()> {
+    use vestige_mcp::cognitive::CognitiveEngine;
+
+    println!("{}", "=== Vestige HTTP Server ===".cyan().bold());
+    println!();
+
+    let storage = Storage::new(None)?;
+
+    #[cfg(feature = "embeddings")]
+    {
+        if let Err(e) = storage.init_embeddings() {
+            println!(
+                "  {} Embeddings unavailable: {} (search will use keyword-only)",
+                "!".yellow(),
+                e
+            );
+        }
+    }
+
+    let storage = Arc::new(storage);
+
+    let rt = tokio::runtime::Runtime::new()?;
+    rt.block_on(async move {
+        let cognitive = Arc::new(tokio::sync::Mutex::new(CognitiveEngine::new()));
+        {
+            let mut cog = cognitive.lock().await;
+            cog.hydrate(&storage);
+        }
+
+        let (event_tx, _) =
+            tokio::sync::broadcast::channel::<vestige_mcp::dashboard::events::VestigeEvent>(1024);
+
+        // Optionally start dashboard
+        if with_dashboard {
+            let ds = Arc::clone(&storage);
+            let dc = Arc::clone(&cognitive);
+            let dtx = event_tx.clone();
+            tokio::spawn(async move {
+                match vestige_mcp::dashboard::start_background_with_event_tx(ds, Some(dc), dtx, dashboard_port).await {
+                    Ok(_) => println!("  {} Dashboard: http://127.0.0.1:{}", ">".cyan(), dashboard_port),
+                    Err(e) => eprintln!("  {} Dashboard failed: {}", "!".yellow(), e),
+                }
+            });
+        }
+
+        // Get auth token
+        let token = vestige_mcp::protocol::auth::get_or_create_auth_token()
+            .map_err(|e| anyhow::anyhow!("Failed to create auth token: {}", e))?;
+
+        let bind = std::env::var("VESTIGE_HTTP_BIND").unwrap_or_else(|_| "127.0.0.1".to_string());
+        println!("  {} HTTP transport: http://{}:{}/mcp", ">".cyan(), bind, port);
+        println!("  {} Auth token: {}...", ">".cyan(), &token[..8]);
+        println!();
+        println!("{}", "Press Ctrl+C to stop.".dimmed());
+
+        // Start HTTP transport (blocks on the server, no stdio)
+        vestige_mcp::protocol::http::start_http_transport(
+            Arc::clone(&storage),
+            Arc::clone(&cognitive),
+            event_tx,
+            token,
+            port,
+        )
+        .await
+        .map_err(|e| anyhow::anyhow!("HTTP transport failed: {}", e))?;
+
+        // Keep the process alive (the HTTP server runs in a spawned task)
+        tokio::signal::ctrl_c().await.ok();
+        println!();
+        println!("{}", "Shutting down...".dimmed());
+
+        Ok(())
     })
 }
 

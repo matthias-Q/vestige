@@ -1,6 +1,6 @@
 [package]
 name = "vestige-mcp"
-version = "2.0.1"
+version = "2.0.2"
 edition = "2024"
 description = "Cognitive memory MCP server for Claude - FSRS-6, spreading activation, synaptic tagging, 3D dashboard, and 130 years of memory research"
 authors = ["samvallad33"]
@@ -32,7 +32,7 @@ path = "src/bin/cli.rs"
 # ============================================================================
 # Includes: FSRS-6, spreading activation, synaptic tagging, hippocampal indexing,
 # memory states, context memory, importance signals, dreams, and more
-vestige-core = { version = "2.0.1", path = "../vestige-core", default-features = false, features = ["bundled-sqlite"] }
+vestige-core = { version = "2.0.2", path = "../vestige-core", default-features = false, features = ["bundled-sqlite"] }
 
 # ============================================================================
 # MCP Server Dependencies
@@ -49,6 +49,9 @@ chrono = { version = "0.4", features = ["serde"] }
 
 # UUID
 uuid = { version = "1", features = ["v4", "serde"] }
+
+# Constant-time comparison for auth tokens (prevents timing side-channels)
+subtle = "2"
 
 # Error handling
 thiserror = "2"

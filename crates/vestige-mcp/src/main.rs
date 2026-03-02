@@ -27,12 +27,9 @@
 //! - Reconsolidation (memories editable on retrieval)
 //! - Memory Chains (reasoning paths)
 
-// cognitive is exported from lib.rs for dashboard access
 use vestige_mcp::cognitive;
-mod protocol;
-mod resources;
-mod server;
-mod tools;
+use vestige_mcp::protocol;
+use vestige_mcp::server;
 
 use std::io;
 use std::path::PathBuf;
@@ -44,15 +41,24 @@ use tracing_subscriber::EnvFilter;
 // Use vestige-core for the cognitive science engine
 use vestige_core::Storage;
 
-use crate::protocol::stdio::StdioTransport;
-use crate::server::McpServer;
+use protocol::stdio::StdioTransport;
+use server::McpServer;
 
-/// Parse command-line arguments and return the optional data directory path.
-/// Returns `None` for the path if no `--data-dir` was specified.
+/// Parsed CLI configuration.
+struct Config {
+    data_dir: Option<PathBuf>,
+    http_port: u16,
+}
+
+/// Parse command-line arguments into a `Config`.
 /// Exits the process if `--help` or `--version` is requested.
-fn parse_args() -> Option<PathBuf> {
+fn parse_args() -> Config {
     let args: Vec<String> = std::env::args().collect();
     let mut data_dir: Option<PathBuf> = None;
+    let mut http_port: u16 = std::env::var("VESTIGE_HTTP_PORT")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(3928);
     let mut i = 1;
 
     while i < args.len() {
@@ -69,13 +75,18 @@ fn parse_args() -> Option<PathBuf> {
                 println!("    -h, --help              Print help information");
                 println!("    -V, --version           Print version information");
                 println!("    --data-dir <PATH>       Custom data directory");
+                println!("    --http-port <PORT>      HTTP transport port (default: 3928)");
                 println!();
                 println!("ENVIRONMENT:");
-                println!("    RUST_LOG               Log level filter (e.g., debug, info, warn, error)");
+                println!("    RUST_LOG                  Log level filter (e.g., debug, info, warn, error)");
+                println!("    VESTIGE_AUTH_TOKEN         Override the bearer token for HTTP transport");
+                println!("    VESTIGE_HTTP_PORT          HTTP transport port (default: 3928)");
+                println!("    VESTIGE_DASHBOARD_PORT     Dashboard port (default: 3927)");
                 println!();
                 println!("EXAMPLES:");
                 println!("    vestige-mcp");
                 println!("    vestige-mcp --data-dir /custom/path");
+                println!("    vestige-mcp --http-port 8080");
                 println!("    RUST_LOG=debug vestige-mcp");
                 std::process::exit(0);
             }
@@ -102,6 +113,31 @@ fn parse_args() -> Option<PathBuf> {
                 }
                 data_dir = Some(PathBuf::from(path));
             }
+            "--http-port" => {
+                i += 1;
+                if i >= args.len() {
+                    eprintln!("error: --http-port requires a port number");
+                    eprintln!("Usage: vestige-mcp --http-port <PORT>");
+                    std::process::exit(1);
+                }
+                http_port = match args[i].parse() {
+                    Ok(p) => p,
+                    Err(_) => {
+                        eprintln!("error: invalid port number '{}'", args[i]);
+                        std::process::exit(1);
+                    }
+                };
+            }
+            arg if arg.starts_with("--http-port=") => {
+                let val = arg.strip_prefix("--http-port=").unwrap_or("");
+                http_port = match val.parse() {
+                    Ok(p) => p,
+                    Err(_) => {
+                        eprintln!("error: invalid port number '{}'", val);
+                        std::process::exit(1);
+                    }
+                };
+            }
             arg => {
                 eprintln!("error: unknown argument '{}'", arg);
                 eprintln!("Usage: vestige-mcp [OPTIONS]");
@@ -112,13 +148,13 @@ fn parse_args() -> Option<PathBuf> {
         i += 1;
     }
 
-    data_dir
+    Config { data_dir, http_port }
 }
 
 #[tokio::main]
 async fn main() {
     // Parse CLI arguments first (before logging init, so --help/--version work cleanly)
-    let data_dir = parse_args();
+    let config = parse_args();
 
     // Initialize logging to stderr (stdout is for JSON-RPC)
     tracing_subscriber::fmt()
@@ -134,7 +170,7 @@ async fn main() {
     info!("Vestige MCP Server v{} starting...", env!("CARGO_PKG_VERSION"));
 
     // Initialize storage with optional custom data directory
-    let storage = match Storage::new(data_dir) {
+    let storage = match Storage::new(config.data_dir) {
         Ok(s) => {
             info!("Storage initialized successfully");
 
@@ -258,6 +294,38 @@ async fn main() {
                 }
             }
         });
+    }
+
+    // Start HTTP MCP transport (Streamable HTTP for Claude.ai / remote clients)
+    {
+        let http_storage = Arc::clone(&storage);
+        let http_cognitive = Arc::clone(&cognitive);
+        let http_event_tx = event_tx.clone();
+        let http_port = config.http_port;
+
+        match protocol::auth::get_or_create_auth_token() {
+            Ok(token) => {
+                let bind = std::env::var("VESTIGE_HTTP_BIND").unwrap_or_else(|_| "127.0.0.1".to_string());
+                eprintln!("Vestige HTTP transport: http://{}:{}/mcp", bind, http_port);
+                eprintln!("Auth token: {}...", &token[..8]);
+                tokio::spawn(async move {
+                    if let Err(e) = protocol::http::start_http_transport(
+                        http_storage,
+                        http_cognitive,
+                        http_event_tx,
+                        token,
+                        http_port,
+                    )
+                    .await
+                    {
+                        warn!("HTTP transport failed to start: {}", e);
+                    }
+                });
+            }
+            Err(e) => {
+                warn!("Could not create auth token, HTTP transport disabled: {}", e);
+            }
+        }
     }
 
     // Load cross-encoder reranker in the background (downloads ~150MB on first run)

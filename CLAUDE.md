@@ -1,6 +1,6 @@
-# Vestige v2.0.0 — Cognitive Memory System
+# Vestige v2.0.1 — Cognitive Memory System
 
-Vestige is your long-term memory. It implements real neuroscience: FSRS-6 spaced repetition, synaptic tagging, prediction error gating, hippocampal indexing, spreading activation, and 29 stateful cognitive modules. **Use it automatically.**
+Vestige is your long-term memory. 29 stateful cognitive modules implement real neuroscience: FSRS-6 spaced repetition, synaptic tagging, prediction error gating, hippocampal indexing, spreading activation, reconsolidation, and dual-strength memory theory. **Use it automatically. Use it aggressively.**
 
 ---
 
@@ -9,135 +9,204 @@ Vestige is your long-term memory. It implements real neuroscience: FSRS-6 spaced
 Every conversation, before responding to the user:
 
 ```
-1. session_context({                            → ONE CALL replaces steps 1-5
-     queries: ["user preferences", "[project] context"],
-     context: { codebase: "[project]", topics: ["[current topics]"] },
-     token_budget: 1000
-   })
-2. Check automationTriggers from response:
-   - needsDream == true  → call dream
-   - needsBackup == true → call backup
-   - needsGc == true     → call gc(dry_run: true)
-   - totalMemories > 700 → call find_duplicates
+session_context({
+  queries: ["user preferences", "[current project] context"],
+  context: { codebase: "[project]", topics: ["[current topics]"] },
+  token_budget: 2000
+})
 ```
+
+Then check `automationTriggers` from response:
+- `needsDream` → call `dream` (consolidates memories, discovers hidden connections)
+- `needsBackup` → call `backup`
+- `needsGc` → call `gc(dry_run: true)` then review
+- totalMemories > 700 → call `find_duplicates`
 
 Say "Remembering..." then retrieve context before answering.
 
-> **Fallback:** If `session_context` is unavailable, use the 5-call sequence: `search` × 2 → `intention` check → `system_status` → `predict`.
+> **Fallback:** If `session_context` unavailable: `search` × 2 → `intention` check → `system_status` → `predict`.
 
 ---
 
-## The 21 Tools
+## Complete Tool Reference (21 Tools)
 
-### Context Packets (1 tool)
-| Tool | When to Use |
-|------|-------------|
-| `session_context` | **One-call session initialization.** Replaces 5 separate calls (search × 2, intention check, system_status, predict) with a single token-budgeted response. Returns markdown context + `automationTriggers` (needsDream/needsBackup/needsGc) + `expandable` IDs for on-demand full retrieval. Params: `queries` (string[]), `token_budget` (100-10000, default 1000), `context` ({codebase, topics, file}), `include_status/include_intentions/include_predictions` (bool). |
+### session_context — One-Call Initialization
+```
+session_context({
+  queries: ["user preferences", "project context"],  // search queries
+  context: { codebase: "project-name", topics: ["svelte", "rust"], file: "src/main.rs" },
+  token_budget: 2000,        // 100-10000, controls response size
+  include_status: true,       // system health
+  include_intentions: true,   // triggered reminders
+  include_predictions: true   // proactive memory predictions
+})
+```
+Returns: markdown context + `automationTriggers` + `expandable` IDs for on-demand retrieval.
 
-### Core Memory (1 tool)
-| Tool | When to Use |
-|------|-------------|
-| `smart_ingest` | **Default for all saves.** Single mode: provide `content` for auto-decide CREATE/UPDATE/SUPERSEDE via Prediction Error Gating. Batch mode: provide `items` array (max 20) for session-end saves — each item runs full cognitive pipeline (importance scoring, intent detection, synaptic tagging, hippocampal indexing). |
+### smart_ingest — Save Anything
+**Single mode** — auto-decides CREATE/UPDATE/SUPERSEDE via Prediction Error Gating:
+```
+smart_ingest({
+  content: "What to remember",
+  tags: ["tag1", "tag2"],
+  node_type: "fact",          // fact|concept|event|person|place|note|pattern|decision
+  source: "optional reference",
+  forceCreate: false          // bypass dedup when needed
+})
+```
+**Batch mode** — save up to 20 items in one call (session end, pre-compaction):
+```
+smart_ingest({
+  items: [
+    { content: "Item 1", tags: ["session-end"], node_type: "fact" },
+    { content: "Item 2", tags: ["bug-fix"], node_type: "fact" }
+  ]
+})
+```
+Each item runs the full cognitive pipeline: importance scoring → intent detection → synaptic tagging → hippocampal indexing → PE gating → cross-project recording.
 
-### Unified Tools (4 tools)
-| Tool | Actions | When to Use |
-|------|---------|-------------|
-| `search` | query + filters | **Every time you need to recall anything.** Hybrid search (BM25 + semantic + convex combination fusion). 7-stage pipeline: overfetch → rerank → temporal boost → accessibility filter → context match → competition → spreading activation. Searching strengthens memory (Testing Effect). **v1.8.0:** optional `token_budget` param (100-10000) limits response size; results exceeding budget moved to `expandable` array. |
-| `memory` | get, delete, state, promote, demote | Retrieve a full memory by ID, delete a memory, check its cognitive state (Active/Dormant/Silent/Unavailable), promote (thumbs up — increases retrieval strength), or demote (thumbs down — decreases retrieval strength, does NOT delete). |
-| `codebase` | remember_pattern, remember_decision, get_context | Store and recall code patterns, architectural decisions, and project context. The killer differentiator. |
-| `intention` | set, check, update, list | Prospective memory — "remember to do X when Y happens". Supports time, context, and event triggers. |
+### search — 7-Stage Cognitive Search
+```
+search({
+  query: "search query",
+  limit: 10,                  // 1-100
+  min_retention: 0.0,         // filter by retention strength
+  min_similarity: 0.5,        // minimum cosine similarity
+  detail_level: "summary",    // brief|summary|full
+  context_topics: ["rust", "debugging"],  // boost topic-matching memories
+  token_budget: 3000          // 100-10000, truncate to fit
+})
+```
+Pipeline: Overfetch (3x, BM25+semantic) → Rerank (cross-encoder) → Temporal boost → Accessibility filter (FSRS-6) → Context match (Tulving 1973) → Competition (Anderson 1994) → Spreading activation. **Every search strengthens the memories it finds (Testing Effect).**
 
-### Temporal (2 tools)
-| Tool | When to Use |
-|------|-------------|
-| `memory_timeline` | Browse memories chronologically. Grouped by day. Filter by type, tags, date range. When user references a time period ("last week", "yesterday"). |
-| `memory_changelog` | Audit trail. Per-memory: state transitions. System-wide: consolidations + recent changes. When debugging memory issues. |
+### memory — Read, Edit, Delete, Promote, Demote
+```
+memory({ action: "get", id: "uuid" })           // full node with all FSRS state
+memory({ action: "edit", id: "uuid", content: "updated text" })  // preserves FSRS state, regenerates embedding
+memory({ action: "delete", id: "uuid" })
+memory({ action: "promote", id: "uuid", reason: "was helpful" })  // +0.20 retrieval, +0.10 retention, 1.5x stability
+memory({ action: "demote", id: "uuid", reason: "was wrong" })     // -0.30 retrieval, -0.15 retention, 0.5x stability
+memory({ action: "state", id: "uuid" })          // Active/Dormant/Silent/Unavailable + accessibility score
+```
+Promote/demote does NOT delete — it adjusts ranking. Demoted memories rank lower; alternatives surface instead.
 
-### Cognitive (3 tools)
-| Tool | When to Use |
-|------|-------------|
-| `dream` | Trigger memory consolidation — replays recent memories to discover hidden connections and synthesize insights. At session start if >24h since last dream, after every 50 saves. |
-| `explore_connections` | Graph exploration. Actions: `chain` (reasoning path A→B), `associations` (spreading activation from a node), `bridges` (connecting memories between two nodes). When search returns 3+ related results. |
-| `predict` | Proactive retrieval — predicts what memories you'll need next based on context, activity patterns, and learned behavior. At session start, when switching projects. |
+### codebase — Code Patterns & Architectural Decisions
+```
+codebase({ action: "remember_pattern", name: "Pattern Name",
+  description: "How it works and when to use it",
+  files: ["src/file.rs"], codebase: "project-name" })
 
-### Auto-Save & Dedup (2 tools)
-| Tool | When to Use |
-|------|-------------|
-| `importance_score` | Score content importance before deciding whether to save. 4-channel model: novelty, arousal, reward, attention. Composite > 0.6 = worth saving. |
-| `find_duplicates` | Find near-duplicate memory clusters via cosine similarity. Returns merge/review suggestions. Run when memory count > 700 or on user request. |
+codebase({ action: "remember_decision", decision: "What was decided",
+  rationale: "Why", alternatives: ["Option A", "Option B"],
+  files: ["src/file.rs"], codebase: "project-name" })
 
-### Autonomic (2 tools)
-| Tool | When to Use |
-|------|-------------|
-| `memory_health` | Retention dashboard — avg retention, distribution buckets, trend (improving/declining/stable), recommendation. Lightweight alternative to system_status focused on memory quality. |
-| `memory_graph` | Subgraph export for visualization. Input: center_id or query, depth (1-3), max_nodes. Returns nodes with force-directed layout positions and edges with weights. |
+codebase({ action: "get_context", codebase: "project-name", limit: 10 })
+// Returns: patterns, decisions, cross-project insights
+```
 
-### Maintenance (5 tools)
-| Tool | When to Use |
-|------|-------------|
-| `system_status` | **Combined health + stats.** Returns status (healthy/degraded/critical/empty), full statistics, FSRS preview, cognitive module health, state distribution, warnings, and recommendations. At session start (or use `session_context` which includes this). |
-| `consolidate` | Run FSRS-6 consolidation cycle. Applies decay, generates embeddings, maintenance. At session end, when retention drops. |
-| `backup` | Create SQLite database backup. Before major upgrades, weekly. |
-| `export` | Export memories as JSON/JSONL with tag and date filters. |
-| `gc` | Garbage collect low-retention memories. When system_status shows degraded + high count. Defaults to dry_run=true. |
+### intention — Prospective Memory (Reminders)
+```
+intention({ action: "set", description: "What to do",
+  trigger: { type: "context", topic: "authentication" },  // fires when discussing auth
+  priority: "high" })
 
-### Restore (1 tool)
-| Tool | When to Use |
-|------|-------------|
-| `restore` | Restore memories from a JSON backup file. Supports MCP wrapper, RecallResult, and direct array formats. |
+intention({ action: "set", description: "Deploy by Friday",
+  trigger: { type: "time", at: "2026-03-07T17:00:00Z" },
+  deadline: "2026-03-07T17:00:00Z" })
 
-### Deprecated (still work via redirects)
-| Old Tool | Redirects To |
-|----------|-------------|
-| `ingest` | `smart_ingest` |
-| `session_checkpoint` | `smart_ingest` (batch mode) |
-| `promote_memory` | `memory(action="promote")` |
-| `demote_memory` | `memory(action="demote")` |
-| `health_check` | `system_status` |
-| `stats` | `system_status` |
+intention({ action: "set", description: "Check test coverage",
+  trigger: { type: "context", codebase: "vestige", file_pattern: "*.test.*" } })
+
+intention({ action: "check", context: { codebase: "vestige", topics: ["testing"] } })
+intention({ action: "update", id: "uuid", status: "complete" })
+intention({ action: "list", filter_status: "active" })
+```
+
+### dream — Memory Consolidation
+```
+dream({ memory_count: 50 })
+```
+5-stage cycle: Replay → Cross-reference → Strengthen → Prune → Transfer. Uses Waking SWR tagging (70% tagged + 30% random for diversity). Discovers hidden connections, generates insights, persists new edges to the activation network.
+
+### explore_connections — Graph Traversal
+```
+explore_connections({ action: "associations", from: "uuid", limit: 10 })
+// Spreading activation from a memory — find related memories via graph traversal
+
+explore_connections({ action: "chain", from: "uuid-A", to: "uuid-B" })
+// Build reasoning path between two memories (A*-like pathfinding)
+
+explore_connections({ action: "bridges", from: "uuid-A", to: "uuid-B" })
+// Find connecting memories that bridge two concepts
+```
+
+### predict — Proactive Retrieval
+```
+predict({ context: { codebase: "vestige", current_file: "src/main.rs",
+  current_topics: ["error handling", "rust"] } })
+```
+Returns: predictions with confidence, suggestions, speculative retrievals, top interests. Uses SpeculativeRetriever's learned patterns from access history.
+
+### importance_score — Should I Save This?
+```
+importance_score({ content: "Content to evaluate",
+  context_topics: ["debugging"], project: "vestige" })
+```
+4-channel model: novelty (0.25), arousal (0.30), reward (0.25), attention (0.20). Composite > 0.6 = save it.
+
+### find_duplicates — Dedup Memory
+```
+find_duplicates({ similarity_threshold: 0.80, limit: 20, tags: ["bug-fix"] })
+```
+Cosine similarity clustering. Returns merge/review suggestions.
+
+### memory_timeline — Chronological Browse
+```
+memory_timeline({ start: "2026-02-01", end: "2026-03-01",
+  node_type: "decision", tags: ["vestige"], limit: 50, detail_level: "summary" })
+```
+
+### memory_changelog — Audit Trail
+```
+memory_changelog({ memory_id: "uuid", limit: 20 })       // per-memory history
+memory_changelog({ start: "2026-03-01", limit: 20 })      // system-wide
+```
+
+### memory_health — Retention Dashboard
+```
+memory_health()
+```
+Returns: avg retention, distribution buckets (0-20%, 20-40%, etc.), trend (improving/declining/stable), recommendation.
+
+### memory_graph — Visualization Export
+```
+memory_graph({ query: "search term", depth: 2, max_nodes: 50 })
+memory_graph({ center_id: "uuid", depth: 3, max_nodes: 100 })
+```
+Returns nodes with force-directed positions + edges with weights.
+
+### Maintenance Tools
+```
+system_status()                              // health + stats + warnings + recommendations
+consolidate()                                // FSRS-6 decay cycle + embedding generation
+backup()                                     // SQLite backup → ~/.vestige/backups/
+export({ format: "json", tags: ["bug-fix"], since: "2026-01-01" })
+gc({ min_retention: 0.1, dry_run: true })    // garbage collect (dry_run first!)
+restore({ path: "/path/to/backup.json" })
+```
 
 ---
 
 ## Mandatory Save Gates
 
-**RULE: You MUST NOT proceed past a save gate without executing the save.**
+**You MUST NOT proceed past a save gate without executing the save.**
 
-### BUG_FIX — After any error is resolved
-Your next tool call after confirming a fix MUST be `smart_ingest`:
-```
-smart_ingest({
-  content: "BUG FIX: [exact error]\nRoot cause: [why]\nSolution: [what fixed it]\nFiles: [paths]",
-  tags: ["bug-fix", "[project]"], node_type: "fact"
-})
-```
-
-### DECISION — After any architectural or design choice
-```
-codebase({
-  action: "remember_decision",
-  decision: "[what]", rationale: "[why]",
-  alternatives: ["[A]", "[B]"], files: ["[affected]"], codebase: "[project]"
-})
-```
-
-### CODE_CHANGE — After writing significant code (>20 lines or new pattern)
-```
-codebase({
-  action: "remember_pattern",
-  name: "[pattern]", description: "[how/when to use]",
-  files: ["[files]"], codebase: "[project]"
-})
-```
-
-### SESSION_END — Before stopping or compaction
-```
-smart_ingest({
-  items: [
-    { content: "SESSION: [work done]\nFixes: [list]\nDecisions: [list]", tags: ["session-end", "[project]"] },
-    // ... any unsaved fixes, decisions, patterns
-  ]
-})
-```
+| Gate | Trigger | Action |
+|------|---------|--------|
+| **BUG_FIX** | After any error is resolved | `smart_ingest({ content: "BUG FIX: [error]\nRoot cause: [why]\nSolution: [fix]\nFiles: [paths]", tags: ["bug-fix", "project"], node_type: "fact" })` |
+| **DECISION** | After any architectural/design choice | `codebase({ action: "remember_decision", decision, rationale, alternatives, files, codebase })` |
+| **CODE_CHANGE** | After >20 lines or new pattern | `codebase({ action: "remember_pattern", name, description, files, codebase })` |
+| **SESSION_END** | Before stopping or compaction | `smart_ingest({ items: [{ content: "SESSION: [summary]", tags: ["session-end"] }] })` |
 
 ---
 
@@ -148,60 +217,82 @@ smart_ingest({
 | "Remember this" / "Don't forget" | `smart_ingest` immediately |
 | "I always..." / "I never..." / "I prefer..." | Save as preference |
 | "This is important" | `smart_ingest` + `memory(action="promote")` |
-| "Remind me..." / "Next time..." | `intention` → set |
+| "Remind me..." / "Next time..." | `intention({ action: "set" })` |
 
 ---
 
-## Under the Hood — Cognitive Pipelines
+## Cognitive Architecture
 
 ### Search Pipeline (7 stages)
-1. **Overfetch** — Pull 3x results from hybrid search (BM25 + semantic)
-2. **Reranker** — Re-score by relevance quality (cross-encoder)
-3. **Temporal boost** — Recent memories get recency bonus
-4. **Accessibility filter** — FSRS-6 retention threshold (Ebbinghaus curve)
-5. **Context match** — Tulving 1973 encoding specificity (match current context to encoding context)
+1. **Overfetch** — 3x results from hybrid search (0.3 BM25 + 0.7 semantic, nomic-embed-text-v1.5 768D)
+2. **Rerank** — Cross-encoder rescoring (Jina Reranker v1 Turbo, 38M params)
+3. **Temporal** — Recency + validity window boosting (85% relevance + 15% temporal)
+4. **Accessibility** — FSRS-6 retention filter (Active ≥0.7, Dormant ≥0.4, Silent ≥0.1)
+5. **Context** — Tulving 1973 encoding specificity (topic overlap → +30% boost)
 6. **Competition** — Anderson 1994 retrieval-induced forgetting (winners strengthen, competitors weaken)
-7. **Spreading activation** — Side effects: activate related memories, update predictive model, record reconsolidation opportunity
+7. **Activation** — Spreading activation side effects + predictive model + reconsolidation marking
 
-### Ingest Pipeline (cognitive pre/post)
-**Pre-ingest:** 4-channel importance scoring (novelty/arousal/reward/attention) + intent detection → auto-tag
-**Storage:** Prediction Error Gating decides create/update/reinforce/supersede
-**Post-ingest:** Synaptic tagging (Frey & Morris 1997) + novelty model update + hippocampal indexing + cross-project recording
+### Ingest Pipeline
+**Pre:** 4-channel importance scoring (novelty/arousal/reward/attention) + intent detection → auto-tag
+**Store:** Prediction Error Gating: similarity >0.92 → UPDATE, 0.75-0.92 → UPDATE/SUPERSEDE, <0.75 → CREATE
+**Post:** Synaptic tagging (Frey & Morris 1997, 9h backward + 2h forward) + hippocampal indexing + cross-project recording
 
-### Feedback Pipeline (via memory promote/demote)
-**Promote:** Reward signal + importance boost + reconsolidation (memory becomes modifiable for 24-48h) + activation spread
-**Demote:** Competition suppression + retrieval strength decrease (does NOT delete — alternatives surface instead)
+### FSRS-6 (State-of-the-Art Spaced Repetition)
+- Retrievability: `R = (1 + factor × t / S)^(-w20)` — 21 trained parameters
+- Dual-strength model (Bjork & Bjork 1992): storage strength (grows) + retrieval strength (decays)
+- Accessibility = retention×0.5 + retrieval×0.3 + storage×0.2
+- 20-30% more efficient than SM-2 (Anki)
+
+### 29 Cognitive Modules (stateful, persist across calls)
+
+**Neuroscience (16):**
+ActivationNetwork (Collins & Loftus 1975), SynapticTaggingSystem (Frey & Morris 1997), HippocampalIndex (Teyler & Rudy 2007), ContextMatcher (Tulving 1973), AccessibilityCalculator, CompetitionManager (Anderson 1994), StateUpdateService, ImportanceSignals, NoveltySignal, ArousalSignal, RewardSignal, AttentionSignal, EmotionalMemory (Brown & Kulik 1977), PredictiveMemory, ProspectiveMemory, IntentionParser
+
+**Advanced (11):**
+ImportanceTracker, ReconsolidationManager (Nader — 5min labile window), IntentDetector (9 intent types), ActivityTracker, MemoryDreamer (5-stage consolidation), MemoryChainBuilder (A*-like), MemoryCompressor (30-day min age), CrossProjectLearner (6 pattern types), AdaptiveEmbedder, SpeculativeRetriever (6 trigger types), ConsolidationScheduler
+
+**Search (2):** Reranker, TemporalSearcher
+
+### Memory States
+- **Active** (retention ≥ 0.7) — easily retrievable
+- **Dormant** (≥ 0.4) — retrievable with effort
+- **Silent** (≥ 0.1) — difficult, needs cues
+- **Unavailable** (< 0.1) — needs reinforcement
+
+### Connection Types
+semantic, temporal, causal, spatial, part_of, user_defined — each with strength (0-1), activation_count, timestamps
 
 ---
 
-## CognitiveEngine — 29 Modules
+## Advanced Techniques
 
-All modules persist across tool calls as stateful instances:
+### Cross-Project Intelligence
+The CrossProjectLearner tracks patterns across ALL projects (ErrorHandling, AsyncConcurrency, Testing, Architecture, Performance, Security). When you learn a pattern in one project that works, it becomes available in all projects. Use `codebase({ action: "get_context" })` without a codebase filter to get universal patterns.
 
-**Neuroscience (16):** ActivationNetwork, SynapticTaggingSystem, HippocampalIndex, ContextMatcher, AccessibilityCalculator, CompetitionManager, StateUpdateService, ImportanceSignals, NoveltySignal, ArousalSignal, RewardSignal, AttentionSignal, EmotionalMemory, PredictiveMemory, ProspectiveMemory, IntentionParser
+### Reconsolidation Window
+After any memory is accessed (via search, get, or promote), it enters a 5-minute "labile" state where modifications are enhanced. This is the optimal time to edit memories with new context. The system handles this automatically.
 
-**Advanced (11):** ImportanceTracker, ReconsolidationManager, IntentDetector, ActivityTracker, MemoryDreamer, MemoryChainBuilder, MemoryCompressor, CrossProjectLearner, AdaptiveEmbedder, SpeculativeRetriever, ConsolidationScheduler
+### Synaptic Tagging (Retroactive Importance)
+Memories encoded in the last 9 hours can be retroactively promoted when something important happens. If you fix a critical bug, not only does the fix get saved — related memories from the past 9 hours also get importance boosts. The SynapticTaggingSystem handles this automatically.
 
-**Search (2):** Reranker, TemporalSearcher
+### Dream Insights
+Dreams don't just consolidate — they generate new insights by cross-referencing recent memories with older knowledge. The insights can reveal: contradictions between memories, previously unseen patterns, connections across different projects. Always check dream results for `insights_generated`.
+
+### Token Budget Strategy
+Use `token_budget` on search and session_context to control response size. For quick lookups: 500. For deep context: 3000-5000. Results that don't fit go to `expandable` — retrieve them with `memory({ action: "get", id: "..." })`.
+
+### Detail Levels
+- `brief` — id/type/tags/score only (1-2 tokens per result, good for scanning)
+- `summary` — 8 fields including content preview (default, balanced)
+- `full` — all FSRS state, timestamps, embedding info (for debugging/analysis)
 
 ---
 
 ## Memory Hygiene
 
-### Promote when:
-- User confirms memory was helpful → `memory(action="promote")`
-- Solution worked correctly
-- Information was accurate
-
-### Demote when:
-- User corrects a mistake → `memory(action="demote")`
-- Information was wrong
-- Memory led to bad outcome
-
-### Never save:
-- Secrets, API keys, passwords
-- Temporary debugging state
-- Obvious/trivial information
+**Promote** when user confirms helpful, solution worked, info was accurate.
+**Demote** when user corrects mistake, info was wrong, led to bad outcome.
+**Never save:** secrets, API keys, passwords, temporary debugging state, trivial info.
 
 ---
 
@@ -216,11 +307,14 @@ Memory is retrieval. Searching strengthens memory. Search liberally, save aggres
 ## Development
 
 - **Crate:** `vestige-mcp` v2.0.1, Rust 2024 edition, MSRV 1.91
-- **Tests:** 1,238 tests, zero warnings
-- **Build:** `cargo build --release -p vestige-mcp`
-- **Features:** `embeddings` + `vector-search` (default on)
-- **Architecture:** `McpServer` holds `Arc<Storage>` + `Arc<Mutex<CognitiveEngine>>`
-- **Storage:** Interior mutability — `Storage` uses `Mutex<Connection>` for reader/writer split, all methods take `&self`. WAL mode for concurrent reads + writes.
-- **Entry:** `src/main.rs` → stdio JSON-RPC server
-- **Tools:** `src/tools/` — one file per tool, each exports `schema()` + `execute()`
-- **Cognitive:** `src/cognitive.rs` — 29-field struct, initialized once at startup
+- **Tests:** 1,238 (352 unit + 192 E2E + cognitive + journey + extreme), zero warnings
+- **Build:** `cargo build --release -p vestige-mcp` (features: `embeddings` + `vector-search`)
+- **Build (no embeddings):** `cargo build --release -p vestige-mcp --no-default-features`
+- **Bench:** `cargo bench -p vestige-core`
+- **Architecture:** `McpServer` → `Arc<Storage>` + `Arc<Mutex<CognitiveEngine>>`
+- **Storage:** SQLite WAL mode, `Mutex<Connection>` reader/writer split, FTS5 full-text search
+- **Embeddings:** nomic-embed-text-v1.5 (768D, 8K context) via fastembed (local ONNX, no API)
+- **Vector index:** USearch HNSW (20x faster than FAISS)
+- **Binaries:** `vestige-mcp` (MCP server), `vestige` (CLI), `vestige-restore`
+- **Dashboard:** SvelteKit 2 + Svelte 5 + Three.js + Tailwind 4, embedded at `/dashboard`
+- **Env vars:** `VESTIGE_DASHBOARD_PORT` (default 3927), `VESTIGE_CONSOLIDATION_INTERVAL_HOURS` (default 6), `RUST_LOG`

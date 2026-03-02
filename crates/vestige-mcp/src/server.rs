@@ -11,7 +11,7 @@ use tokio::sync::{broadcast, Mutex};
 use tracing::{debug, info, warn};
 
 use crate::cognitive::CognitiveEngine;
-use vestige_mcp::dashboard::events::VestigeEvent;
+use crate::dashboard::events::VestigeEvent;
 use crate::protocol::messages::{
     CallToolRequest, CallToolResult, InitializeRequest, InitializeResult,
     ListResourcesResult, ListToolsResult, ReadResourceRequest, ReadResourceResult,
