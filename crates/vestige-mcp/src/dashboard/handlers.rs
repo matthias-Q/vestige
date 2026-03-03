@@ -4,7 +4,7 @@
 
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
-use axum::response::{Html, Json};
+use axum::response::{Json, Redirect};
 use chrono::{Duration, Utc};
 use serde::Deserialize;
 use serde_json::Value;
@@ -12,9 +12,9 @@ use serde_json::Value;
 use super::events::VestigeEvent;
 use super::state::AppState;
 
-/// Serve the dashboard HTML
-pub async fn serve_dashboard() -> Html<&'static str> {
-    Html(include_str!("../dashboard.html"))
+/// Redirect root to the SvelteKit dashboard
+pub async fn serve_dashboard() -> Redirect {
+    Redirect::permanent("/dashboard")
 }
 
 #[derive(Debug, Deserialize)]
@@ -328,9 +328,9 @@ pub async fn health_check(
 // MEMORY GRAPH
 // ============================================================================
 
-/// Serve the memory graph visualization HTML
-pub async fn serve_graph() -> Html<&'static str> {
-    Html(include_str!("../graph.html"))
+/// Redirect legacy graph to SvelteKit dashboard graph page
+pub async fn serve_graph() -> Redirect {
+    Redirect::permanent("/dashboard/graph")
 }
 
 #[derive(Debug, Deserialize)]
@@ -360,13 +360,21 @@ pub async fn get_graph(
             .map(|n| n.id.clone())
             .ok_or(StatusCode::NOT_FOUND)?
     } else {
-        // Default: most recent memory
-        let recent = state.storage
-            .get_all_nodes(1, 0)
+        // Default: most connected memory (for a rich initial graph)
+        let most_connected = state.storage
+            .get_most_connected_memory()
             .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-        recent.first()
-            .map(|n| n.id.clone())
-            .ok_or(StatusCode::NOT_FOUND)?
+        if let Some(id) = most_connected {
+            id
+        } else {
+            // Fallback: most recent memory
+            let recent = state.storage
+                .get_all_nodes(1, 0)
+                .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+            recent.first()
+                .map(|n| n.id.clone())
+                .ok_or(StatusCode::NOT_FOUND)?
+        }
     };
 
     // Get subgraph

@@ -3532,6 +3532,21 @@ impl Storage {
         Ok(result)
     }
 
+    /// Get the memory with the most connections (best center node for graph visualization)
+    pub fn get_most_connected_memory(&self) -> Result<Option<String>> {
+        let reader = self.reader.lock()
+            .map_err(|_| StorageError::Init("Reader lock poisoned".into()))?;
+        let mut stmt = reader.prepare(
+            "SELECT id, COUNT(*) as cnt FROM (
+                SELECT source_id as id FROM memory_connections
+                UNION ALL
+                SELECT target_id as id FROM memory_connections
+            ) GROUP BY id ORDER BY cnt DESC LIMIT 1"
+        )?;
+        let result = stmt.query_row([], |row| row.get::<_, String>(0)).optional()?;
+        Ok(result)
+    }
+
     /// Get memories with their connection data for graph visualization
     pub fn get_memory_subgraph(&self, center_id: &str, depth: u32, max_nodes: usize) -> Result<(Vec<KnowledgeNode>, Vec<ConnectionRecord>)> {
         let mut visited_ids: std::collections::HashSet<String> = std::collections::HashSet::new();

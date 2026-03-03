@@ -10,7 +10,9 @@ export class ForceSimulation {
 	private readonly repulsionStrength = 500;
 	private readonly attractionStrength = 0.01;
 	private readonly dampening = 0.9;
-	private readonly maxSteps = 300;
+	private readonly baseMaxSteps = 300;
+	private maxSteps = 300;
+	private cooldownExtension = 0;
 
 	constructor(positions: Map<string, THREE.Vector3>) {
 		this.positions = positions;
@@ -20,8 +22,30 @@ export class ForceSimulation {
 		}
 	}
 
+	addNode(id: string, position: THREE.Vector3) {
+		this.positions.set(id, position.clone());
+		this.velocities.set(id, new THREE.Vector3());
+		// Re-energize: rewind step count to keep physics alive for 100 more frames
+		this.cooldownExtension = 100;
+		this.maxSteps = Math.max(this.maxSteps, this.step + this.cooldownExtension);
+		this.running = true;
+	}
+
+	removeNode(id: string) {
+		this.positions.delete(id);
+		this.velocities.delete(id);
+	}
+
 	tick(edges: GraphEdge[]) {
-		if (!this.running || this.step > this.maxSteps) return;
+		if (!this.running) return;
+		if (this.step > this.maxSteps) {
+			// Decay cooldown extension, settle back to base
+			if (this.cooldownExtension > 0) {
+				this.cooldownExtension = 0;
+				this.maxSteps = this.baseMaxSteps;
+			}
+			return;
+		}
 		this.step++;
 
 		const alpha = Math.max(0.001, 1 - this.step / this.maxSteps);

@@ -6,6 +6,7 @@
 	import { api } from '$stores/api';
 	import { eventFeed } from '$stores/websocket';
 	import type { GraphResponse, GraphNode, GraphEdge, Memory } from '$types';
+	import type { GraphMutation } from '$lib/graph/events';
 	import { filterByDate } from '$lib/graph/temporal';
 
 	let graphData: GraphResponse | null = $state(null);
@@ -17,6 +18,10 @@
 	let maxNodes = $state(150);
 	let temporalEnabled = $state(false);
 	let temporalDate = $state(new Date());
+
+	// Live counts that update on mutations
+	let liveNodeCount = $state(0);
+	let liveEdgeCount = $state(0);
 
 	// Filtered graph data based on temporal mode
 	let displayNodes = $derived.by((): GraphNode[] => {
@@ -31,6 +36,40 @@
 		return filterByDate(graphData.nodes, graphData.edges, temporalDate).visibleEdges;
 	});
 
+	function handleGraphMutation(mutation: GraphMutation) {
+		if (!graphData) return;
+
+		switch (mutation.type) {
+			case 'nodeAdded':
+				graphData.nodes = [...graphData.nodes, mutation.node];
+				graphData.nodeCount = graphData.nodes.length;
+				liveNodeCount = graphData.nodeCount;
+				break;
+			case 'nodeRemoved':
+				graphData.nodes = graphData.nodes.filter((n) => n.id !== mutation.nodeId);
+				graphData.nodeCount = graphData.nodes.length;
+				liveNodeCount = graphData.nodeCount;
+				break;
+			case 'edgeAdded':
+				graphData.edges = [...graphData.edges, mutation.edge];
+				graphData.edgeCount = graphData.edges.length;
+				liveEdgeCount = graphData.edgeCount;
+				break;
+			case 'edgesRemoved':
+				graphData.edges = graphData.edges.filter(
+					(e) => e.source !== mutation.nodeId && e.target !== mutation.nodeId
+				);
+				graphData.edgeCount = graphData.edges.length;
+				liveEdgeCount = graphData.edgeCount;
+				break;
+			case 'nodeUpdated': {
+				const node = graphData.nodes.find((n) => n.id === mutation.nodeId);
+				if (node) node.retention = mutation.retention;
+				break;
+			}
+		}
+	}
+
 	onMount(() => loadGraph());
 
 	async function loadGraph(query?: string, centerId?: string) {
@@ -43,6 +82,10 @@
 				query: query || undefined,
 				center_id: centerId || undefined
 			});
+			if (graphData) {
+				liveNodeCount = graphData.nodeCount;
+				liveEdgeCount = graphData.edgeCount;
+			}
 		} catch {
 			error = 'No memories yet. Start using Vestige to populate your graph.';
 		} finally {
@@ -96,6 +139,7 @@
 			events={$eventFeed}
 			{isDreaming}
 			onSelect={onNodeSelect}
+			onGraphMutation={handleGraphMutation}
 		/>
 	{/if}
 
@@ -149,9 +193,9 @@
 	<!-- Bottom stats -->
 	<div class="absolute bottom-4 left-4 z-10 text-xs text-dim glass rounded-xl px-3 py-2">
 		{#if graphData}
-			<span>{displayNodes.length} nodes</span>
+			<span>{liveNodeCount} nodes</span>
 			<span class="mx-2 text-subtle">·</span>
-			<span>{displayEdges.length} edges</span>
+			<span>{liveEdgeCount} edges</span>
 			<span class="mx-2 text-subtle">·</span>
 			<span>depth {graphData.depth}</span>
 		{/if}

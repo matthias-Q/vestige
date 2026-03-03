@@ -8,7 +8,7 @@
 	import { ParticleSystem } from '$lib/graph/particles';
 	import { EffectManager } from '$lib/graph/effects';
 	import { DreamMode } from '$lib/graph/dream-mode';
-	import { mapEventToEffects } from '$lib/graph/events';
+	import { mapEventToEffects, type GraphMutationContext, type GraphMutation } from '$lib/graph/events';
 	import { createNebulaBackground, updateNebula } from '$lib/graph/shaders/nebula.frag';
 	import { createPostProcessing, updatePostProcessing, type PostProcessingStack } from '$lib/graph/shaders/post-processing';
 	import type * as THREE from 'three';
@@ -20,9 +20,10 @@
 		events?: VestigeEvent[];
 		isDreaming?: boolean;
 		onSelect?: (nodeId: string) => void;
+		onGraphMutation?: (mutation: GraphMutation) => void;
 	}
 
-	let { nodes, edges, centerId, events = [], isDreaming = false, onSelect }: Props = $props();
+	let { nodes, edges, centerId, events = [], isDreaming = false, onSelect, onGraphMutation }: Props = $props();
 
 	let container: HTMLDivElement;
 	let ctx: SceneContext;
@@ -40,6 +41,9 @@
 
 	// Event tracking
 	let processedEventCount = 0;
+
+	// Internal tracking: initial nodes + live-added nodes
+	let allNodes: GraphNode[] = [];
 
 	onMount(() => {
 		ctx = createScene(container);
@@ -62,6 +66,9 @@
 		const positions = nodeManager.createNodes(nodes);
 		edgeManager.createEdges(edges, positions);
 		forceSim = new ForceSimulation(positions);
+
+		// Track all nodes (initial set)
+		allNodes = [...nodes];
 
 		ctx.scene.add(edgeManager.group);
 		ctx.scene.add(nodeManager.group);
@@ -96,9 +103,12 @@
 		nodeManager.updatePositions();
 		edgeManager.updatePositions(nodeManager.positions);
 
+		// Animate edge growth/dissolution
+		edgeManager.animateEdges(nodeManager.positions);
+
 		// Animate
 		particles.animate(time);
-		nodeManager.animate(time, nodes, ctx.camera);
+		nodeManager.animate(time, allNodes, ctx.camera);
 
 		// Dream mode
 		dreamMode.setActive(isDreaming);
@@ -116,7 +126,7 @@
 
 		// Events + effects
 		processEvents();
-		effects.update(nodeManager.meshMap, ctx.camera);
+		effects.update(nodeManager.meshMap, ctx.camera, nodeManager.positions);
 
 		ctx.controls.update();
 		ctx.composer.render();
@@ -128,8 +138,26 @@
 		const newEvents = events.slice(processedEventCount);
 		processedEventCount = events.length;
 
+		const mutationCtx: GraphMutationContext = {
+			effects,
+			nodeManager,
+			edgeManager,
+			forceSim,
+			camera: ctx.camera,
+			onMutation: (mutation: GraphMutation) => {
+				// Update internal allNodes tracking
+				if (mutation.type === 'nodeAdded') {
+					allNodes = [...allNodes, mutation.node];
+				} else if (mutation.type === 'nodeRemoved') {
+					allNodes = allNodes.filter((n) => n.id !== mutation.nodeId);
+				}
+				// Notify parent
+				onGraphMutation?.(mutation);
+			},
+		};
+
 		for (const event of newEvents) {
-			mapEventToEffects(event, effects, nodeManager.positions, nodeManager.meshMap, ctx.camera);
+			mapEventToEffects(event, mutationCtx, allNodes);
 		}
 	}
 
