@@ -116,7 +116,7 @@ pub async fn start_http_transport(
     let bind_addr: std::net::IpAddr = std::env::var("VESTIGE_HTTP_BIND")
         .ok()
         .and_then(|s| s.parse().ok())
-        .unwrap_or_else(|| std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST));
+        .unwrap_or(std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST));
 
     let addr = std::net::SocketAddr::from((bind_addr, port));
     let listener = tokio::net::TcpListener::bind(addr).await?;
