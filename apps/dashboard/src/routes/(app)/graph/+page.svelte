@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { base } from '$app/paths';
 	import Graph3D from '$components/Graph3D.svelte';
 	import RetentionCurve from '$components/RetentionCurve.svelte';
 	import TimeSlider from '$components/TimeSlider.svelte';
@@ -289,7 +290,7 @@
 
 				<!-- Explore from this node -->
 				<a
-					href="/explore"
+					href="{base}/explore"
 					class="block text-center px-3 py-2 rounded-xl bg-dream/10 text-dream-glow text-xs hover:bg-dream/20 transition border border-dream/20"
 				>
 					◬ Explore Connections
