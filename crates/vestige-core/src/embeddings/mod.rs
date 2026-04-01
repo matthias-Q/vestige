@@ -13,6 +13,7 @@ mod code;
 mod hybrid;
 mod local;
 
+pub(crate) use local::get_cache_dir;
 pub use local::{
     cosine_similarity, dot_product, euclidean_distance, matryoshka_truncate, Embedding,
     EmbeddingError, EmbeddingService, BATCH_SIZE, EMBEDDING_DIMENSIONS, MAX_TEXT_LENGTH,

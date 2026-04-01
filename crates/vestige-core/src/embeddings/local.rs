@@ -33,18 +33,26 @@ pub const BATCH_SIZE: usize = 32;
 /// Result type for model initialization
 static EMBEDDING_MODEL_RESULT: OnceLock<Result<Mutex<TextEmbedding>, String>> = OnceLock::new();
 
-/// Get the default cache directory for fastembed models
-/// Uses FASTEMBED_CACHE_PATH env var, or falls back to platform cache directory
-fn get_cache_dir() -> std::path::PathBuf {
+/// Get the default cache directory for fastembed models.
+///
+/// Resolution order:
+/// 1. `FASTEMBED_CACHE_PATH` env var (explicit override)
+/// 2. Platform cache dir via `directories::ProjectDirs`
+///    - Linux:   `$XDG_CACHE_HOME/vestige/fastembed` (typically `~/.cache/vestige/fastembed`)
+///    - macOS:   `~/Library/Caches/vestige/fastembed`
+///    - Windows: `%LOCALAPPDATA%\vestige\cache\fastembed`
+/// 3. `~/.cache/vestige/fastembed` (home-dir fallback)
+/// 4. `.fastembed_cache` relative to CWD (absolute last resort, should never trigger)
+pub(crate) fn get_cache_dir() -> std::path::PathBuf {
     if let Ok(path) = std::env::var("FASTEMBED_CACHE_PATH") {
         return std::path::PathBuf::from(path);
     }
 
-    // Use platform-appropriate cache directory via directories crate
-    // macOS: ~/Library/Caches/com.vestige.core/fastembed
-    // Linux: ~/.cache/vestige/fastembed
-    // Windows: %LOCALAPPDATA%\vestige\cache\fastembed
-    if let Some(proj_dirs) = directories::ProjectDirs::from("com", "vestige", "core") {
+    // qualifier="" produces a clean app-name-only path on Linux/Windows;
+    // on macOS the qualifier is used for the bundle ID so we keep it empty
+    // to get ~/Library/Caches/vestige/fastembed rather than
+    // ~/Library/Caches/com.vestige.vestige/fastembed.
+    if let Some(proj_dirs) = directories::ProjectDirs::from("", "vestige", "vestige") {
         return proj_dirs.cache_dir().join("fastembed");
     }
 
@@ -53,7 +61,7 @@ fn get_cache_dir() -> std::path::PathBuf {
         return base_dirs.home_dir().join(".cache/vestige/fastembed");
     }
 
-    // Last resort fallback (shouldn't happen)
+    // Last resort fallback (shouldn't happen in practice)
     std::path::PathBuf::from(".fastembed_cache")
 }
 
@@ -210,9 +218,7 @@ impl Default for EmbeddingService {
 impl EmbeddingService {
     /// Create a new embedding service
     pub fn new() -> Self {
-        Self {
-            _unused: (),
-        }
+        Self { _unused: () }
     }
 
     /// Check if the model is ready
@@ -240,9 +246,13 @@ impl EmbeddingService {
     /// Get the model name
     pub fn model_name(&self) -> &'static str {
         #[cfg(feature = "nomic-v2")]
-        { "nomic-ai/nomic-embed-text-v2-moe" }
+        {
+            "nomic-ai/nomic-embed-text-v2-moe"
+        }
         #[cfg(not(feature = "nomic-v2"))]
-        { "nomic-ai/nomic-embed-text-v1.5" }
+        {
+            "nomic-ai/nomic-embed-text-v1.5"
+        }
     }
 
     /// Get the embedding dimensions
