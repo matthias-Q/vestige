@@ -180,7 +180,7 @@ async fn main() {
                 if let Err(e) = s.init_embeddings() {
                     error!("Failed to initialize embedding service: {}", e);
                     error!("Smart ingest will fall back to regular ingest without deduplication");
-                    error!("Hint: Check FASTEMBED_CACHE_PATH or ensure ~/.fastembed_cache exists");
+                    error!("Hint: Check FASTEMBED_CACHE_PATH or ensure ~/.cache/vestige/fastembed is writable");
                 } else {
                     info!("Embedding service initialized successfully");
                 }
