@@ -42,6 +42,9 @@ sudo mv vestige-mcp vestige vestige-restore /usr/local/bin/
 # 2. Connect to Claude Code
 claude mcp add vestige vestige-mcp -s user
 
+# Or connect to Codex
+codex mcp add vestige -- /usr/local/bin/vestige-mcp
+
 # 3. Test it
 # "Remember that I prefer TypeScript over JavaScript"
 # ...new session...
@@ -89,6 +92,7 @@ Vestige speaks MCP — the universal protocol for AI tools. One brain, every IDE
 | IDE | Setup |
 |-----|-------|
 | **Claude Code** | `claude mcp add vestige vestige-mcp -s user` |
+| **Codex** | [Integration guide](docs/integrations/codex.md) |
 | **Claude Desktop** | [2-min setup](docs/CONFIGURATION.md#claude-desktop-macos) |
 | **Xcode 26.3** | [Integration guide](docs/integrations/xcode.md) |
 | **Cursor** | [Integration guide](docs/integrations/cursor.md) |
@@ -321,7 +325,7 @@ vestige dashboard                # Open 3D dashboard in browser
 | [Storage Modes](docs/STORAGE.md) | Global, per-project, multi-instance |
 | [CLAUDE.md Setup](docs/CLAUDE-SETUP.md) | Templates for proactive memory |
 | [Configuration](docs/CONFIGURATION.md) | CLI commands, environment variables |
-| [Integrations](docs/integrations/) | Xcode, Cursor, VS Code, JetBrains, Windsurf |
+| [Integrations](docs/integrations/) | Codex, Xcode, Cursor, VS Code, JetBrains, Windsurf |
 | [Changelog](CHANGELOG.md) | Version history |
 
 ---

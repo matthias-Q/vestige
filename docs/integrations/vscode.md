@@ -152,6 +152,7 @@ Every team member with Vestige installed will automatically get memory-enabled C
 |-----|-------|
 | Xcode 26.3 | [Setup](./xcode.md) |
 | Cursor | [Setup](./cursor.md) |
+| Codex | [Setup](./codex.md) |
 | JetBrains | [Setup](./jetbrains.md) |
 | Windsurf | [Setup](./windsurf.md) |
 | Claude Code | [Setup](../CONFIGURATION.md#claude-code-one-liner) |

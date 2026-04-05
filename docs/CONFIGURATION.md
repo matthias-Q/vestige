@@ -62,7 +62,21 @@ vestige restore <file>     # Restore from backup
 
 ---
 
-## Claude Configuration
+## Client Configuration
+
+### Codex (One-liner)
+
+```bash
+codex mcp add vestige -- /usr/local/bin/vestige-mcp
+```
+
+### Codex (Manual)
+
+Add to `~/.codex/config.toml`:
+```toml
+[mcp_servers.vestige]
+command = "/usr/local/bin/vestige-mcp"
+```
 
 ### Claude Code (One-liner)
 

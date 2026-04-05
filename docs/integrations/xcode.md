@@ -249,6 +249,7 @@ Vestige uses the MCP standard — the same memory works across all your tools:
 | IDE | Guide |
 |-----|-------|
 | Claude Code | [Setup](../CONFIGURATION.md#claude-code-one-liner) |
+| Codex | [Setup](./codex.md) |
 | Claude Desktop | [Setup](../CONFIGURATION.md#claude-desktop-macos) |
 | Cursor | [Setup](./cursor.md) |
 | VS Code (Copilot) | [Setup](./vscode.md) |

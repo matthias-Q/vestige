@@ -148,6 +148,7 @@ If you have many MCP servers and exceed 100 total tools, Cascade will ignore exc
 | Xcode 26.3 | [Setup](./xcode.md) |
 | Cursor | [Setup](./cursor.md) |
 | VS Code (Copilot) | [Setup](./vscode.md) |
+| Codex | [Setup](./codex.md) |
 | JetBrains | [Setup](./jetbrains.md) |
 | Claude Code | [Setup](../CONFIGURATION.md#claude-code-one-liner) |
 | Claude Desktop | [Setup](../CONFIGURATION.md#claude-desktop-macos) |
