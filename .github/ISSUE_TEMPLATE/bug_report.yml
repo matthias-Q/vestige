@@ -52,6 +52,7 @@ body:
     attributes:
       label: IDE / Client
       options:
+        - Codex
         - Claude Code
         - Claude Desktop
         - Cursor

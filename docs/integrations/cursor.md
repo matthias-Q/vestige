@@ -133,6 +133,7 @@ Cursor does not surface MCP server errors in the UI. Test by running the command
 | IDE | Guide |
 |-----|-------|
 | Xcode 26.3 | [Setup](./xcode.md) |
+| Codex | [Setup](./codex.md) |
 | VS Code (Copilot) | [Setup](./vscode.md) |
 | JetBrains | [Setup](./jetbrains.md) |
 | Windsurf | [Setup](./windsurf.md) |
