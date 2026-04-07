@@ -178,6 +178,39 @@ pub async fn execute(
     let semantic_weight = 0.7_f32;
 
     // ====================================================================
+    // STAGE 0: Keyword-first search (dedicated keyword-only pass)
+    // ====================================================================
+    // Run a small keyword-only search to guarantee strong keyword matches
+    // survive into the candidate pool, even with small limits/overfetch.
+    // Without this, exact keyword matches (e.g. unique proper nouns) get
+    // buried by semantic scoring in the hybrid search.
+    let keyword_first_limit = 10_i32;
+    let keyword_priority_threshold: f32 = 0.8;
+
+    let keyword_first_results = storage
+        .hybrid_search_filtered(
+            &args.query,
+            keyword_first_limit,
+            1.0,  // keyword_weight = 1.0 (keyword-only)
+            0.0,  // semantic_weight = 0.0
+            args.include_types.as_deref(),
+            args.exclude_types.as_deref(),
+        )
+        .map_err(|e| e.to_string())?;
+
+    // Collect keyword-priority results (keyword_score >= threshold)
+    let mut keyword_priority_ids: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut keyword_priority_results: Vec<vestige_core::SearchResult> = Vec::new();
+    for r in keyword_first_results {
+        if r.keyword_score.unwrap_or(0.0) >= keyword_priority_threshold
+            && r.node.retention_strength >= min_retention
+        {
+            keyword_priority_ids.insert(r.node.id.clone());
+            keyword_priority_results.push(r);
+        }
+    }
+
+    // ====================================================================
     // STAGE 1: Hybrid search with Nx over-fetch for reranking pool
     // ====================================================================
     let overfetch_multiplier = match retrieval_mode {
@@ -215,24 +248,86 @@ pub async fn execute(
         .collect();
 
     // ====================================================================
+    // Dedup: merge Stage 0 keyword-priority results into Stage 1 results
+    // ====================================================================
+    for kp in &keyword_priority_results {
+        if let Some(existing) = filtered_results.iter_mut().find(|r| r.node.id == kp.node.id) {
+            // Preserve keyword_score from Stage 0 (keyword-only search is authoritative)
+            if kp.keyword_score.unwrap_or(0.0) > existing.keyword_score.unwrap_or(0.0) {
+                existing.keyword_score = kp.keyword_score;
+            }
+            if kp.combined_score > existing.combined_score {
+                existing.combined_score = kp.combined_score;
+            }
+        } else {
+            // New result from Stage 0 not in Stage 1 — add it
+            filtered_results.push(kp.clone());
+        }
+    }
+
+    // ====================================================================
     // STAGE 2: Reranker (BM25-like rescoring, trim to requested limit)
     // ====================================================================
-    if let Ok(mut cog) = cognitive.try_lock() {
-        let candidates: Vec<_> = filtered_results
-            .iter()
-            .map(|r| (r.clone(), r.node.content.clone()))
-            .collect();
+    // Keyword bypass: results with strong keyword matches (>= 0.8) skip the
+    // cross-encoder entirely and are placed above reranked results. This
+    // prevents the cross-encoder from burying exact/near-exact keyword hits
+    // (e.g. unique proper nouns) beneath semantically-similar but unrelated
+    // results.
+    {
+        let keyword_bypass_threshold: f32 = 0.8;
+        let limit_usize = limit as usize;
 
-        if let Ok(reranked) = cog.reranker.rerank(&args.query, candidates, Some(limit as usize)) {
-            // Replace filtered_results with reranked items (preserves original SearchResult)
-            filtered_results = reranked.into_iter().map(|rr| rr.item).collect();
-        } else {
-            // Reranker failed — fall back to original order, just truncate
-            filtered_results.truncate(limit as usize);
+        // Partition: keyword bypass vs. candidates for reranking
+        let mut bypass_results: Vec<vestige_core::SearchResult> = Vec::new();
+        let mut rerank_candidates: Vec<(vestige_core::SearchResult, String)> = Vec::new();
+
+        for r in filtered_results.iter() {
+            if r.keyword_score.unwrap_or(0.0) >= keyword_bypass_threshold {
+                bypass_results.push(r.clone());
+            } else {
+                rerank_candidates.push((r.clone(), r.node.content.clone()));
+            }
         }
-    } else {
-        // Couldn't acquire cognitive lock — truncate to limit
-        filtered_results.truncate(limit as usize);
+
+        // Boost bypass results so they survive later pipeline stages
+        // (temporal, FSRS, utility, competition) and the final re-sort.
+        for r in bypass_results.iter_mut() {
+            r.combined_score *= 2.0;
+        }
+
+        bypass_results.sort_by(|a, b| {
+            b.combined_score
+                .partial_cmp(&a.combined_score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+
+        // Rerank the remaining candidates
+        let reranked_results: Vec<vestige_core::SearchResult> = if rerank_candidates.is_empty() {
+            Vec::new()
+        } else if let Ok(mut cog) = cognitive.try_lock() {
+            if let Ok(reranked) = cog.reranker.rerank(&args.query, rerank_candidates, Some(limit_usize)) {
+                reranked.into_iter().map(|rr| rr.item).collect()
+            } else {
+                // Reranker failed — fall back to original order for non-bypass candidates
+                filtered_results
+                    .iter()
+                    .filter(|r| r.keyword_score.unwrap_or(0.0) < keyword_bypass_threshold)
+                    .cloned()
+                    .collect()
+            }
+        } else {
+            // Couldn't acquire cognitive lock — use original order
+            filtered_results
+                .iter()
+                .filter(|r| r.keyword_score.unwrap_or(0.0) < keyword_bypass_threshold)
+                .cloned()
+                .collect()
+        };
+
+        // Merge: bypass first, then reranked, trim to limit
+        filtered_results = bypass_results;
+        filtered_results.extend(reranked_results);
+        filtered_results.truncate(limit_usize);
     }
 
     // ====================================================================
