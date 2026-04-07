@@ -66,6 +66,16 @@ pub fn schema() -> Value {
                 "items": { "type": "string" },
                 "description": "Optional topics for context-dependent retrieval boosting"
             },
+            "exclude_types": {
+                "type": "array",
+                "items": { "type": "string" },
+                "description": "Node types to exclude from results (e.g., ['reflection']). Reflections are excluded by default to prevent polluting factual queries."
+            },
+            "include_types": {
+                "type": "array",
+                "items": { "type": "string" },
+                "description": "If set, only return nodes of these types. Overrides exclude_types."
+            },
             "token_budget": {
                 "type": "integer",
                 "description": "Max tokens for response. Server truncates content to fit budget. Use memory(action='get') for full content of specific IDs. With 1M context models, budgets up to 100K are practical.",
@@ -96,6 +106,10 @@ struct SearchArgs {
     detail_level: Option<String>,
     #[serde(alias = "context_topics")]
     context_topics: Option<Vec<String>>,
+    #[serde(alias = "exclude_types")]
+    exclude_types: Option<Vec<String>>,
+    #[serde(alias = "include_types")]
+    include_types: Option<Vec<String>>,
     #[serde(alias = "token_budget")]
     token_budget: Option<i32>,
     #[serde(alias = "retrieval_mode")]
@@ -174,7 +188,14 @@ pub async fn execute(
     let overfetch_limit = (limit * overfetch_multiplier).min(100); // Cap at 100 to avoid excessive DB load
 
     let results = storage
-        .hybrid_search(&args.query, overfetch_limit, keyword_weight, semantic_weight)
+        .hybrid_search_filtered(
+            &args.query,
+            overfetch_limit,
+            keyword_weight,
+            semantic_weight,
+            args.include_types.as_deref(),
+            args.exclude_types.as_deref(),
+        )
         .map_err(|e| e.to_string())?;
 
     // Filter by min_retention and min_similarity first (cheap filters)
