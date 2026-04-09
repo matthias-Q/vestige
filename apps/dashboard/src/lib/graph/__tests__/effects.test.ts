@@ -245,11 +245,11 @@ describe('EffectManager', () => {
 			expect(n1Pulses.length).toBeLessThanOrEqual(1);
 		});
 
-		it('applies scale bump to contacted nodes', () => {
+		it('adds pulse to contacted nodes instead of direct scale mutation', () => {
 			const nodePositions = new Map<string, any>([
 				['bump', new Vector3(3, 0, 0)],
 			]);
-			const mesh = createMockMesh('bump', new Vector3(3, 0, 0));
+			createMockMesh('bump', new Vector3(3, 0, 0));
 
 			effects.createRippleWave(new Vector3(0, 0, 0) as any);
 
@@ -258,8 +258,9 @@ describe('EffectManager', () => {
 				effects.update(nodeMeshMap, camera, nodePositions);
 			}
 
-			// Scale should have been bumped (1.3x)
-			expect(mesh.scale.x).toBeGreaterThan(1.0);
+			// Ripple wave should add a pulse effect (not a direct scale mutation)
+			const bumpPulses = effects.pulseEffects.filter(p => p.nodeId === 'bump');
+			expect(bumpPulses.length).toBeGreaterThan(0);
 		});
 
 		it('completes and cleans up after 90 frames', () => {

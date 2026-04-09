@@ -380,9 +380,6 @@ impl DreamEngine {
         let mut strengthened_ids = Vec::new();
 
         let replay_set: HashSet<&String> = replay_queue.iter().collect();
-        let _triaged_map: HashMap<&str, &TriagedMemory> = triaged.iter()
-            .map(|m| (m.id.as_str(), m))
-            .collect();
 
         // Process replay queue in oscillation waves
         let wave_count = replay_queue.len().div_ceil(self.wave_batch_size);
@@ -726,10 +723,12 @@ impl DreamEngine {
         let mut seen_pairs: HashSet<(String, String)> = HashSet::new();
         insights.retain(|i| {
             if i.source_memory_ids.len() >= 2 {
-                let pair = (
-                    i.source_memory_ids[0].clone().min(i.source_memory_ids[1].clone()),
-                    i.source_memory_ids[0].clone().max(i.source_memory_ids[1].clone()),
-                );
+                let (a, b) = (&i.source_memory_ids[0], &i.source_memory_ids[1]);
+                let pair = if a <= b {
+                    (a.clone(), b.clone())
+                } else {
+                    (b.clone(), a.clone())
+                };
                 seen_pairs.insert(pair)
             } else {
                 true

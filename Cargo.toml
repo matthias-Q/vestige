@@ -3,8 +3,6 @@ resolver = "2"
 members = [
     "crates/vestige-core",
     "crates/vestige-mcp",
-    "crates/vestige-agent",
-    "crates/vestige-agent-py",
     "tests/e2e",
 ]
 exclude = [

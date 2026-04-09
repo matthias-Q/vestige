@@ -45,8 +45,8 @@ function createWebSocketStore() {
 						const events = [parsed, ...s.events].slice(0, MAX_EVENTS);
 						return { ...s, events };
 					});
-				} catch {
-					// Ignore malformed messages
+				} catch (e) {
+					console.warn('[vestige] Failed to parse WebSocket message:', e);
 				}
 			};
 

@@ -335,11 +335,8 @@ export class EffectManager {
 						rw.pulsedNodes.add(id);
 						// Mini-pulse on contact
 						this.addPulse(id, 0.8, new THREE.Color(0x00ffd1), 0.03);
-						// Mini scale bump on the mesh
-						const mesh = nodeMeshMap.get(id);
-						if (mesh) {
-							mesh.scale.multiplyScalar(1.3);
-						}
+						// Pulse handles the visual bump — no direct scale mutation
+						// (multiplyScalar was cumulative and fought with animation system)
 					}
 				});
 			}

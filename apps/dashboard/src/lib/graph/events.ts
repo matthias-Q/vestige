@@ -115,7 +115,7 @@ export function mapEventToEffects(
 				id: data.id,
 				label: (data.content ?? '').slice(0, 60),
 				type: data.node_type ?? 'fact',
-				retention: data.retention ?? 0.9,
+				retention: Math.max(0, Math.min(1, data.retention ?? 0.9)),
 				tags: data.tags ?? [],
 				createdAt: new Date().toISOString(),
 				updatedAt: new Date().toISOString(),

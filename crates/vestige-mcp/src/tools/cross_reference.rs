@@ -219,18 +219,18 @@ fn generate_reasoning_chain(
         "PRIMARY FINDING (trust {:.0}%, {}): {}\n",
         primary.trust * 100.0,
         primary.updated_at.format("%b %d, %Y"),
-        primary.content.chars().take(150).collect::<String>(),
+        primary.content.chars().take(300).collect::<String>(),
     ));
 
-    // Superseded memories
+    // Superseded memories — with reasoning arrows
     let superseded: Vec<_> = relations.iter()
         .filter(|(_, _, r)| matches!(r.relation, Relation::Supersedes))
         .collect();
     for (preview, trust, rel) in &superseded {
         chain.push_str(&format!(
-            "  SUPERSEDES (trust {:.0}%): \"{}\" — {}\n",
+            "  SUPERSEDES (trust {:.0}%): \"{}\"\n    -> {}\n",
             trust * 100.0,
-            preview.chars().take(80).collect::<String>(),
+            preview.chars().take(100).collect::<String>(),
             rel.reasoning,
         ));
     }
@@ -240,7 +240,7 @@ fn generate_reasoning_chain(
         .filter(|(_, _, r)| matches!(r.relation, Relation::Supports))
         .collect();
     if !supporting.is_empty() {
-        chain.push_str(&format!("\nSUPPORTED BY {} MEMOR{}:\n",
+        chain.push_str(&format!("SUPPORTED BY {} MEMOR{}:\n",
             supporting.len(),
             if supporting.len() == 1 { "Y" } else { "IES" },
         ));
@@ -248,7 +248,7 @@ fn generate_reasoning_chain(
             chain.push_str(&format!(
                 "  + (trust {:.0}%): \"{}\"\n",
                 trust * 100.0,
-                preview.chars().take(80).collect::<String>(),
+                preview.chars().take(100).collect::<String>(),
             ));
         }
     }
@@ -258,19 +258,23 @@ fn generate_reasoning_chain(
         .filter(|(_, _, r)| matches!(r.relation, Relation::Contradicts))
         .collect();
     if !contradicting.is_empty() {
-        chain.push_str(&format!("\nCONTRADICTING EVIDENCE ({}):\n", contradicting.len()));
+        chain.push_str(&format!("CONTRADICTING EVIDENCE ({}):\n", contradicting.len()));
         for (preview, trust, rel) in contradicting.iter().take(3) {
             chain.push_str(&format!(
-                "  ! (trust {:.0}%): \"{}\" — {}\n",
+                "  ! (trust {:.0}%): \"{}\"\n    -> {}\n",
                 trust * 100.0,
-                preview.chars().take(80).collect::<String>(),
+                preview.chars().take(100).collect::<String>(),
                 rel.reasoning,
             ));
         }
     }
 
-    // Confidence summary
-    chain.push_str(&format!("\nOVERALL CONFIDENCE: {:.0}%\n", confidence * 100.0));
+    // If no relations found, still provide useful output
+    if superseded.is_empty() && supporting.is_empty() && contradicting.is_empty() {
+        chain.push_str("NO CONTRADICTIONS DETECTED. Evidence is consistent.\n");
+    }
+
+    chain.push_str(&format!("OVERALL CONFIDENCE: {:.0}%\n", confidence * 100.0));
 
     chain
 }
@@ -541,12 +545,15 @@ pub async fn execute(
         .max_by(|a, b| a.trust.partial_cmp(&b.trust).unwrap_or(std::cmp::Ordering::Equal))
     {
         for other in scored.iter().filter(|s| s.id != primary.id).take(15) {
+            // Use combined_score as a proxy for semantic similarity (already reranked)
+            // Fall back to topic_overlap for keyword-level comparison
             let sim = topic_overlap(&primary.content, &other.content);
+            let effective_sim = if other.combined_score > 0.2 { sim.max(0.3) } else { sim };
             let rel = assess_relation(
                 &primary.content, &other.content,
                 primary.trust, other.trust,
                 primary.updated_at, other.updated_at,
-                sim,
+                effective_sim,
             );
             if !matches!(rel.relation, Relation::Irrelevant) {
                 pair_relations.push((

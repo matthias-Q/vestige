@@ -205,7 +205,11 @@ export class NodeManager {
 
 	private createTextSprite(text: string, color: string): THREE.Sprite {
 		const canvas = document.createElement('canvas');
-		const ctx = canvas.getContext('2d')!;
+		const ctx = canvas.getContext('2d');
+		if (!ctx) {
+			const tex = new THREE.Texture();
+			return new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, opacity: 0 }));
+		}
 		canvas.width = 512;
 		canvas.height = 64;
 

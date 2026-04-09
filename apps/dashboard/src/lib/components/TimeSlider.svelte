@@ -51,6 +51,7 @@
 	}
 
 	function playLoop() {
+		if (!playing) return;
 		animFrameId = requestAnimationFrame((now) => {
 			const deltaSeconds = (now - lastTime) / 1000;
 			lastTime = now;
@@ -78,6 +79,7 @@
 	}
 
 	onDestroy(() => {
+		playing = false;
 		cancelAnimationFrame(animFrameId);
 	});
 </script>
