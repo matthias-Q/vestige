@@ -120,8 +120,7 @@ pub async fn execute(
             all_associations.truncate(limit);
 
             // Fallback: if in-memory modules are empty, query storage directly
-            if all_associations.is_empty() {
-                if let Ok(connections) = storage.get_connections_for_memory(&from_owned) {
+            if all_associations.is_empty() && let Ok(connections) = storage.get_connections_for_memory(&from_owned) {
                     for conn in connections.iter().take(limit) {
                         let other_id = if conn.source_id == from_owned {
                             &conn.target_id
@@ -135,7 +134,6 @@ pub async fn execute(
                             "source": "persistent_graph",
                         }));
                     }
-                }
             }
 
             Ok(serde_json::json!({
@@ -193,15 +191,13 @@ fn build_temp_chain_builder(storage: &Arc<Storage>, from_id: &str, to_id: &str) 
     let mut seen_ids = std::collections::HashSet::new();
     for conn in &all_conns {
         for id in [&conn.source_id, &conn.target_id] {
-            if seen_ids.insert(id.clone()) {
-                if let Ok(Some(node)) = storage.get_node(id) {
-                    builder.add_memory(MemoryNode {
-                        id: node.id.clone(),
-                        content_preview: node.content.chars().take(100).collect(),
-                        tags: node.tags.clone(),
-                        connections: vec![],
-                    });
-                }
+            if seen_ids.insert(id.clone()) && let Ok(Some(node)) = storage.get_node(id) {
+                builder.add_memory(MemoryNode {
+                    id: node.id.clone(),
+                    content_preview: node.content.chars().take(100).collect(),
+                    tags: node.tags.clone(),
+                    connections: vec![],
+                });
             }
         }
     }
