@@ -152,8 +152,10 @@ struct TriggerSpec {
     #[serde(rename = "type")]
     trigger_type: Option<String>,
     at: Option<String>,
+    #[serde(alias = "in_minutes")]
     in_minutes: Option<i64>,
     codebase: Option<String>,
+    #[serde(alias = "file_pattern")]
     file_pattern: Option<String>,
     topic: Option<String>,
     condition: Option<String>,
@@ -817,6 +819,77 @@ mod tests {
 
         let value = result.unwrap();
         assert!(value["triggerAt"].is_string());
+    }
+
+    #[tokio::test]
+    async fn test_set_action_with_duration_trigger_snake_case() {
+        // The public JSON schema (see schema() above) declares `in_minutes` in
+        // snake_case. The TriggerSpec struct uses `rename_all = "camelCase"` so
+        // without an explicit `#[serde(alias = "in_minutes")]` the snake_case
+        // input is silently dropped (becomes None), `triggerAt` becomes null,
+        // and the time-based intention never fires.
+        let (storage, _dir) = test_storage().await;
+        let args = serde_json::json!({
+            "action": "set",
+            "description": "Check build status",
+            "trigger": {
+                "type": "time",
+                "in_minutes": 30
+            }
+        });
+        let result = execute(&storage, &test_cognitive(), Some(args)).await;
+        assert!(result.is_ok());
+
+        let value = result.unwrap();
+        assert!(
+            value["triggerAt"].is_string(),
+            "snake_case in_minutes should derive triggerAt; got: {:?}",
+            value["triggerAt"]
+        );
+    }
+
+    #[tokio::test]
+    async fn test_set_action_with_file_pattern_snake_case() {
+        // The public JSON schema declares `file_pattern` in snake_case. Verify
+        // it survives deserialization by setting an intention with ONLY
+        // file_pattern (no codebase — otherwise the check-side codebase branch
+        // would short-circuit and mask a dropped file_pattern field).
+        //
+        // Note: file_pattern matching currently uses substring containment, not
+        // glob, so the "pattern" must be a plain substring of the file path.
+        let (storage, _dir) = test_storage().await;
+        let args = serde_json::json!({
+            "action": "set",
+            "description": "Review test files",
+            "trigger": {
+                "type": "context",
+                "file_pattern": ".test.cjs"
+            }
+        });
+        let result = execute(&storage, &test_cognitive(), Some(args)).await;
+        assert!(
+            result.is_ok(),
+            "set should succeed with snake_case file_pattern"
+        );
+
+        // Check should fire when a matching file is in context.
+        let check_args = serde_json::json!({
+            "action": "check",
+            "context": {
+                "file": "tests/neural-cascade.test.cjs"
+            }
+        });
+        let check = execute(&storage, &test_cognitive(), Some(check_args))
+            .await
+            .unwrap();
+        let triggered = check["triggered"].as_array().expect("triggered array");
+        assert!(
+            !triggered.is_empty(),
+            "file_pattern must survive snake_case deserialization and match on file substring; \
+             got triggered: {:?}, pending: {:?}",
+            check["triggered"],
+            check["pending"]
+        );
     }
 
     #[tokio::test]
