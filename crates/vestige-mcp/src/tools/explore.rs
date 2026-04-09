@@ -5,6 +5,7 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 
 use crate::cognitive::CognitiveEngine;
+use vestige_core::advanced::{Connection, ConnectionType, MemoryChainBuilder, MemoryNode};
 use vestige_core::Storage;
 
 pub fn schema() -> serde_json::Value {
@@ -50,12 +51,24 @@ pub async fn execute(
     match action {
         "chain" => {
             let to_id = to.ok_or("'to' is required for chain action")?;
-            match cog.chain_builder.build_chain(from, to_id) {
+            let chain_result = cog.chain_builder.build_chain(from, to_id);
+            let from_owned = from.to_string();
+            let to_owned = to_id.to_string();
+            drop(cog); // release lock before potential storage fallback
+
+            let chain_opt = if chain_result.is_some() {
+                chain_result
+            } else {
+                // Storage fallback: build temporary chain from persisted connections
+                build_chain_from_storage(storage, &from_owned, &to_owned)
+            };
+
+            match chain_opt {
                 Some(chain) => {
                     Ok(serde_json::json!({
                         "action": "chain",
-                        "from": from,
-                        "to": to_id,
+                        "from": from_owned,
+                        "to": to_owned,
                         "steps": chain.steps.iter().map(|s| serde_json::json!({
                             "memory_id": s.memory_id,
                             "memory_preview": s.memory_preview,
@@ -70,8 +83,8 @@ pub async fn execute(
                 None => {
                     Ok(serde_json::json!({
                         "action": "chain",
-                        "from": from,
-                        "to": to_id,
+                        "from": from_owned,
+                        "to": to_owned,
                         "steps": [],
                         "message": "No chain found between these memories"
                     }))
@@ -82,6 +95,8 @@ pub async fn execute(
             let activation_assocs = cog.activation_network.get_associations(from);
             let hippocampal_assocs = cog.hippocampal_index.get_associations(from, 2)
                 .unwrap_or_default();
+            let from_owned = from.to_string();
+            drop(cog); // release lock consistently (matches chain/bridges pattern)
 
             let mut all_associations: Vec<serde_json::Value> = Vec::new();
 
@@ -106,10 +121,9 @@ pub async fn execute(
 
             // Fallback: if in-memory modules are empty, query storage directly
             if all_associations.is_empty() {
-                drop(cog); // release cognitive lock before storage call
-                if let Ok(connections) = storage.get_connections_for_memory(from) {
+                if let Ok(connections) = storage.get_connections_for_memory(&from_owned) {
                     for conn in connections.iter().take(limit) {
-                        let other_id = if conn.source_id == from {
+                        let other_id = if conn.source_id == from_owned {
                             &conn.target_id
                         } else {
                             &conn.source_id
@@ -126,7 +140,7 @@ pub async fn execute(
 
             Ok(serde_json::json!({
                 "action": "associations",
-                "from": from,
+                "from": from_owned,
                 "associations": all_associations,
                 "count": all_associations.len(),
             }))
@@ -134,16 +148,95 @@ pub async fn execute(
         "bridges" => {
             let to_id = to.ok_or("'to' is required for bridges action")?;
             let bridges = cog.chain_builder.find_bridge_memories(from, to_id);
-            let limited: Vec<_> = bridges.iter().take(limit).collect();
+            let from_owned = from.to_string();
+            let to_owned = to_id.to_string();
+            drop(cog); // release lock before potential storage fallback
+
+            let final_bridges = if !bridges.is_empty() {
+                bridges
+            } else {
+                // Storage fallback: build temporary graph and find bridges
+                let temp_builder = build_temp_chain_builder(storage, &from_owned, &to_owned);
+                temp_builder.find_bridge_memories(&from_owned, &to_owned)
+            };
+
+            let limited: Vec<_> = final_bridges.iter().take(limit).collect();
             Ok(serde_json::json!({
                 "action": "bridges",
-                "from": from,
-                "to": to_id,
+                "from": from_owned,
+                "to": to_owned,
                 "bridges": limited,
                 "count": limited.len(),
             }))
         }
         _ => Err(format!("Unknown action: '{}'. Expected: chain, associations, bridges", action)),
+    }
+}
+
+/// Build a temporary MemoryChainBuilder from persisted connections for fallback queries.
+fn build_temp_chain_builder(storage: &Arc<Storage>, from_id: &str, to_id: &str) -> MemoryChainBuilder {
+    let mut builder = MemoryChainBuilder::new();
+
+    // Load connections involving either endpoint
+    let mut all_conns = Vec::new();
+    if let Ok(conns) = storage.get_connections_for_memory(from_id) {
+        all_conns.extend(conns);
+    }
+    if let Ok(conns) = storage.get_connections_for_memory(to_id) {
+        all_conns.extend(conns);
+    }
+
+    // Deduplicate edges and load referenced memory nodes
+    let mut seen_edges = std::collections::HashSet::new();
+    all_conns.retain(|c| seen_edges.insert((c.source_id.clone(), c.target_id.clone())));
+
+    let mut seen_ids = std::collections::HashSet::new();
+    for conn in &all_conns {
+        for id in [&conn.source_id, &conn.target_id] {
+            if seen_ids.insert(id.clone()) {
+                if let Ok(Some(node)) = storage.get_node(id) {
+                    builder.add_memory(MemoryNode {
+                        id: node.id.clone(),
+                        content_preview: node.content.chars().take(100).collect(),
+                        tags: node.tags.clone(),
+                        connections: vec![],
+                    });
+                }
+            }
+        }
+    }
+
+    // Add edges
+    for conn in &all_conns {
+        builder.add_connection(Connection {
+            from_id: conn.source_id.clone(),
+            to_id: conn.target_id.clone(),
+            connection_type: link_type_to_connection_type(&conn.link_type),
+            strength: conn.strength,
+            created_at: conn.created_at,
+        });
+    }
+
+    builder
+}
+
+/// Build a chain from storage when in-memory chain_builder is empty.
+fn build_chain_from_storage(
+    storage: &Arc<Storage>,
+    from_id: &str,
+    to_id: &str,
+) -> Option<vestige_core::advanced::ReasoningChain> {
+    let builder = build_temp_chain_builder(storage, from_id, to_id);
+    builder.build_chain(from_id, to_id)
+}
+
+/// Convert storage link_type string to ConnectionType enum.
+fn link_type_to_connection_type(link_type: &str) -> ConnectionType {
+    match link_type {
+        "temporal" => ConnectionType::TemporalProximity,
+        "causal" => ConnectionType::Causal,
+        "part_of" => ConnectionType::PartOf,
+        _ => ConnectionType::SemanticSimilarity,
     }
 }
 
@@ -350,5 +443,72 @@ mod tests {
         );
         assert_eq!(associations[0]["source"], "persistent_graph");
         assert_eq!(associations[0]["memory_id"], id2);
+    }
+
+    #[tokio::test]
+    async fn test_chain_storage_fallback() {
+        let (storage, _dir) = test_storage().await;
+
+        // Create 3 memories: A -> B -> C
+        let make = |content: &str| vestige_core::IngestInput {
+            content: content.to_string(), node_type: "fact".to_string(),
+            source: None, sentiment_score: 0.0, sentiment_magnitude: 0.0,
+            tags: vec!["test".to_string()], valid_from: None, valid_until: None,
+        };
+        let id_a = storage.ingest(make("Memory A about databases")).unwrap().id;
+        let id_b = storage.ingest(make("Memory B about indexes")).unwrap().id;
+        let id_c = storage.ingest(make("Memory C about performance")).unwrap().id;
+
+        // Save connections A->B and B->C to storage
+        let now = chrono::Utc::now();
+        for (src, tgt) in [(&id_a, &id_b), (&id_b, &id_c)] {
+            storage.save_connection(&vestige_core::ConnectionRecord {
+                source_id: src.clone(), target_id: tgt.clone(),
+                strength: 0.9, link_type: "semantic".to_string(),
+                created_at: now, last_activated: now, activation_count: 1,
+            }).unwrap();
+        }
+
+        // Execute chain with empty cognitive engine — should fall back to storage
+        let args = serde_json::json!({ "action": "chain", "from": id_a, "to": id_c });
+        let result = execute(&storage, &test_cognitive(), Some(args)).await;
+        assert!(result.is_ok());
+        let value = result.unwrap();
+        assert_eq!(value["action"], "chain");
+        let steps = value["steps"].as_array().unwrap();
+        assert!(!steps.is_empty(), "Chain should find path A->B->C via storage fallback");
+    }
+
+    #[tokio::test]
+    async fn test_bridges_storage_fallback() {
+        let (storage, _dir) = test_storage().await;
+
+        // Create 3 memories: A -> B -> C (B is the bridge)
+        let make = |content: &str| vestige_core::IngestInput {
+            content: content.to_string(), node_type: "fact".to_string(),
+            source: None, sentiment_score: 0.0, sentiment_magnitude: 0.0,
+            tags: vec!["test".to_string()], valid_from: None, valid_until: None,
+        };
+        let id_a = storage.ingest(make("Bridge test memory A")).unwrap().id;
+        let id_b = storage.ingest(make("Bridge test memory B")).unwrap().id;
+        let id_c = storage.ingest(make("Bridge test memory C")).unwrap().id;
+
+        let now = chrono::Utc::now();
+        for (src, tgt) in [(&id_a, &id_b), (&id_b, &id_c)] {
+            storage.save_connection(&vestige_core::ConnectionRecord {
+                source_id: src.clone(), target_id: tgt.clone(),
+                strength: 0.9, link_type: "semantic".to_string(),
+                created_at: now, last_activated: now, activation_count: 1,
+            }).unwrap();
+        }
+
+        // Execute bridges with empty cognitive engine
+        let args = serde_json::json!({ "action": "bridges", "from": id_a, "to": id_c });
+        let result = execute(&storage, &test_cognitive(), Some(args)).await;
+        assert!(result.is_ok());
+        let value = result.unwrap();
+        assert_eq!(value["action"], "bridges");
+        let bridges = value["bridges"].as_array().unwrap();
+        assert!(!bridges.is_empty(), "Should find B as bridge between A and C via storage fallback");
     }
 }

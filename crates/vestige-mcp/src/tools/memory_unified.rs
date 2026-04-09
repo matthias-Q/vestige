@@ -43,12 +43,17 @@ pub fn schema() -> Value {
         "properties": {
             "action": {
                 "type": "string",
-                "enum": ["get", "delete", "state", "promote", "demote", "edit"],
-                "description": "Action to perform: 'get' retrieves full memory node, 'delete' removes memory, 'state' returns accessibility state, 'promote' increases retrieval strength (thumbs up), 'demote' decreases retrieval strength (thumbs down), 'edit' updates content in-place (preserves FSRS state)"
+                "enum": ["get", "get_batch", "delete", "state", "promote", "demote", "edit"],
+                "description": "Action to perform: 'get' retrieves full memory node, 'get_batch' retrieves multiple memories by IDs (use 'ids' array), 'delete' removes memory, 'state' returns accessibility state, 'promote' increases retrieval strength (thumbs up), 'demote' decreases retrieval strength (thumbs down), 'edit' updates content in-place (preserves FSRS state)"
             },
             "id": {
                 "type": "string",
-                "description": "The ID of the memory node"
+                "description": "The ID of the memory node (for single-memory actions)"
+            },
+            "ids": {
+                "type": "array",
+                "items": { "type": "string" },
+                "description": "Array of memory IDs (for get_batch action). Max 20 IDs per call."
             },
             "reason": {
                 "type": "string",
@@ -59,7 +64,7 @@ pub fn schema() -> Value {
                 "description": "New content for edit action. Replaces existing content, regenerates embedding, preserves FSRS state."
             }
         },
-        "required": ["action", "id"]
+        "required": ["action"]
     })
 }
 
@@ -67,7 +72,8 @@ pub fn schema() -> Value {
 #[serde(rename_all = "camelCase")]
 struct MemoryArgs {
     action: String,
-    id: String,
+    id: Option<String>,
+    ids: Option<Vec<String>>,
     reason: Option<String>,
     content: Option<String>,
 }
@@ -83,18 +89,34 @@ pub async fn execute(
         None => return Err("Missing arguments".to_string()),
     };
 
-    // Validate UUID format
-    uuid::Uuid::parse_str(&args.id).map_err(|_| "Invalid memory ID format".to_string())?;
+    // get_batch uses 'ids' array, all other actions use 'id'
+    if args.action == "get_batch" {
+        let ids = args.ids.ok_or("get_batch requires 'ids' array")?;
+        if ids.is_empty() {
+            return Err("ids array cannot be empty".to_string());
+        }
+        if ids.len() > 20 {
+            return Err("get_batch supports max 20 IDs per call".to_string());
+        }
+        for id in &ids {
+            uuid::Uuid::parse_str(id).map_err(|_| format!("Invalid memory ID format: {}", id))?;
+        }
+        return execute_get_batch(storage, &ids).await;
+    }
+
+    // All other actions require 'id'
+    let id = args.id.ok_or("This action requires 'id' parameter")?;
+    uuid::Uuid::parse_str(&id).map_err(|_| "Invalid memory ID format".to_string())?;
 
     match args.action.as_str() {
-        "get" => execute_get(storage, &args.id).await,
-        "delete" => execute_delete(storage, &args.id).await,
-        "state" => execute_state(storage, &args.id).await,
-        "promote" => execute_promote(storage, cognitive, &args.id, args.reason).await,
-        "demote" => execute_demote(storage, cognitive, &args.id, args.reason).await,
-        "edit" => execute_edit(storage, &args.id, args.content).await,
+        "get" => execute_get(storage, &id).await,
+        "delete" => execute_delete(storage, &id).await,
+        "state" => execute_state(storage, &id).await,
+        "promote" => execute_promote(storage, cognitive, &id, args.reason).await,
+        "demote" => execute_demote(storage, cognitive, &id, args.reason).await,
+        "edit" => execute_edit(storage, &id, args.content).await,
         _ => Err(format!(
-            "Invalid action '{}'. Must be one of: get, delete, state, promote, demote, edit",
+            "Invalid action '{}'. Must be one of: get, get_batch, delete, state, promote, demote, edit",
             args.action
         )),
     }
@@ -138,6 +160,49 @@ async fn execute_get(storage: &Arc<Storage>, id: &str) -> Result<Value, String> 
             "message": "Memory not found",
         })),
     }
+}
+
+/// Get multiple full memory nodes by ID (batch retrieval for expandable IDs)
+async fn execute_get_batch(storage: &Arc<Storage>, ids: &[String]) -> Result<Value, String> {
+    let mut results = Vec::with_capacity(ids.len());
+    let mut found_count = 0;
+
+    for id in ids {
+        match storage.get_node(id) {
+            Ok(Some(n)) => {
+                found_count += 1;
+                results.push(serde_json::json!({
+                    "id": n.id,
+                    "content": n.content,
+                    "nodeType": n.node_type,
+                    "createdAt": n.created_at.to_rfc3339(),
+                    "updatedAt": n.updated_at.to_rfc3339(),
+                    "tags": n.tags,
+                    "retentionStrength": n.retention_strength,
+                    "source": n.source,
+                }));
+            }
+            Ok(None) => {
+                results.push(serde_json::json!({
+                    "id": id,
+                    "found": false,
+                }));
+            }
+            Err(e) => {
+                results.push(serde_json::json!({
+                    "id": id,
+                    "error": e.to_string(),
+                }));
+            }
+        }
+    }
+
+    Ok(serde_json::json!({
+        "action": "get_batch",
+        "requested": ids.len(),
+        "found": found_count,
+        "results": results,
+    }))
 }
 
 /// Delete a memory and return success status
@@ -388,10 +453,12 @@ mod tests {
         assert!(schema["properties"]["action"].is_object());
         assert!(schema["properties"]["id"].is_object());
         assert!(schema["properties"]["reason"].is_object());
-        assert_eq!(schema["required"], serde_json::json!(["action", "id"]));
-        // Verify all 6 actions are in enum
+        assert_eq!(schema["required"], serde_json::json!(["action"]));
+        assert!(schema["properties"]["ids"].is_object()); // get_batch support
+        // Verify all 7 actions are in enum
         let actions = schema["properties"]["action"]["enum"].as_array().unwrap();
-        assert_eq!(actions.len(), 6);
+        assert_eq!(actions.len(), 7);
+        assert!(actions.contains(&serde_json::json!("get_batch")));
         assert!(actions.contains(&serde_json::json!("edit")));
         assert!(actions.contains(&serde_json::json!("promote")));
         assert!(actions.contains(&serde_json::json!("demote")));

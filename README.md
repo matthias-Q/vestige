@@ -6,7 +6,7 @@
 
 [![GitHub stars](https://img.shields.io/github/stars/samvallad33/vestige?style=social)](https://github.com/samvallad33/vestige)
 [![Release](https://img.shields.io/github/v/release/samvallad33/vestige)](https://github.com/samvallad33/vestige/releases/latest)
-[![Tests](https://img.shields.io/badge/tests-1238%20passing-brightgreen)](https://github.com/samvallad33/vestige/actions)
+[![Tests](https://img.shields.io/badge/tests-758%20passing-brightgreen)](https://github.com/samvallad33/vestige/actions)
 [![License](https://img.shields.io/badge/license-AGPL--3.0-blue)](LICENSE)
 [![MCP Compatible](https://img.shields.io/badge/MCP-compatible-green)](https://modelcontextprotocol.io)
 
@@ -14,7 +14,7 @@
 
 Built on 130 years of memory research — FSRS-6 spaced repetition, prediction error gating, synaptic tagging, spreading activation, memory dreaming — all running in a single Rust binary with a 3D neural visualization dashboard. 100% local. Zero cloud.
 
-[Quick Start](#quick-start) | [Dashboard](#-3d-memory-dashboard) | [How It Works](#-the-cognitive-science-stack) | [Tools](#-21-mcp-tools) | [Docs](docs/)
+[Quick Start](#quick-start) | [Dashboard](#-3d-memory-dashboard) | [How It Works](#-the-cognitive-science-stack) | [Tools](#-23-mcp-tools) | [Docs](docs/)
 
 </div>
 
@@ -132,7 +132,7 @@ The dashboard runs automatically at `http://localhost:3927/dashboard` when the M
 │  15 REST endpoints · WS event broadcast              │
 ├─────────────────────────────────────────────────────┤
 │  MCP Server (stdio JSON-RPC)                         │
-│  21 tools · 29 cognitive modules                     │
+│  23 tools · 29 cognitive modules                     │
 ├─────────────────────────────────────────────────────┤
 │  Cognitive Engine                                    │
 │  ┌──────────┐ ┌──────────┐ ┌───────────────┐       │
@@ -196,7 +196,7 @@ This isn't a key-value store with an embedding model bolted on. Vestige implemen
 
 ---
 
-## 🛠 21 MCP Tools
+## 🛠 23 MCP Tools
 
 ### Context Packets
 | Tool | What It Does |
@@ -240,6 +240,12 @@ This isn't a key-value store with an embedding model bolted on. Vestige implemen
 | `memory_changelog` | Audit trail of state transitions |
 | `backup` / `export` / `gc` | Database backup, JSON export, garbage collection |
 | `restore` | Restore from JSON backup |
+
+### Deep Reference (v2.0.4)
+| Tool | What It Does |
+|------|-------------|
+| `deep_reference` | **Cognitive reasoning across memories.** 8-stage pipeline: FSRS-6 trust scoring, intent classification, spreading activation, temporal supersession, contradiction analysis, relation assessment, dream insight integration, and algorithmic reasoning chain generation. Returns trust-scored evidence with a pre-built reasoning scaffold. |
+| `cross_reference` | Backward-compatible alias for `deep_reference`. |
 
 ---
 

@@ -68,9 +68,15 @@ pub fn schema() -> Value {
             },
             "token_budget": {
                 "type": "integer",
-                "description": "Max tokens for response. Server truncates content to fit budget. Use memory(action='get') for full content of specific IDs.",
+                "description": "Max tokens for response. Server truncates content to fit budget. Use memory(action='get') for full content of specific IDs. With 1M context models, budgets up to 100K are practical.",
                 "minimum": 100,
-                "maximum": 10000
+                "maximum": 100000
+            },
+            "retrieval_mode": {
+                "type": "string",
+                "description": "precise: top results only (fast, token-efficient, skips activation/competition). balanced: full 7-stage cognitive pipeline (default). exhaustive: maximum recall with 5x overfetch, deep graph traversal, no competition suppression.",
+                "enum": ["precise", "balanced", "exhaustive"],
+                "default": "balanced"
             }
         },
         "required": ["query"]
@@ -82,13 +88,18 @@ pub fn schema() -> Value {
 struct SearchArgs {
     query: String,
     limit: Option<i32>,
+    #[serde(alias = "min_retention")]
     min_retention: Option<f64>,
+    #[serde(alias = "min_similarity")]
     min_similarity: Option<f32>,
     #[serde(alias = "detail_level")]
     detail_level: Option<String>,
+    #[serde(alias = "context_topics")]
     context_topics: Option<Vec<String>>,
     #[serde(alias = "token_budget")]
     token_budget: Option<i32>,
+    #[serde(alias = "retrieval_mode")]
+    retrieval_mode: Option<String>,
 }
 
 /// Execute unified search with 7-stage cognitive pipeline.
@@ -135,14 +146,32 @@ pub async fn execute(
     let min_retention = args.min_retention.unwrap_or(0.0).clamp(0.0, 1.0);
     let min_similarity = args.min_similarity.unwrap_or(0.5).clamp(0.0, 1.0);
 
+    // Validate retrieval_mode
+    let retrieval_mode = match args.retrieval_mode.as_deref() {
+        Some("precise") => "precise",
+        Some("exhaustive") => "exhaustive",
+        Some("balanced") | None => "balanced",
+        Some(invalid) => {
+            return Err(format!(
+                "Invalid retrieval_mode '{}'. Must be 'precise', 'balanced', or 'exhaustive'.",
+                invalid
+            ));
+        }
+    };
+
     // Favor semantic search — research shows 0.3/0.7 outperforms equal weights
     let keyword_weight = 0.3_f32;
     let semantic_weight = 0.7_f32;
 
     // ====================================================================
-    // STAGE 1: Hybrid search with 3x over-fetch for reranking pool
+    // STAGE 1: Hybrid search with Nx over-fetch for reranking pool
     // ====================================================================
-    let overfetch_limit = (limit * 3).min(100); // Cap at 100 to avoid excessive DB load
+    let overfetch_multiplier = match retrieval_mode {
+        "precise" => 1,   // No overfetch — return exactly what's asked
+        "exhaustive" => 5, // Deep overfetch for maximum recall
+        _ => 3,            // Balanced default
+    };
+    let overfetch_limit = (limit * overfetch_multiplier).min(100); // Cap at 100 to avoid excessive DB load
 
     let results = storage
         .hybrid_search(&args.query, overfetch_limit, keyword_weight, semantic_weight)
@@ -215,7 +244,7 @@ pub async fn execute(
             // Determine state from retention strength
             lifecycle.state = if result.node.retention_strength > 0.7 {
                 MemoryState::Active
-            } else if result.node.retention_strength > 0.3 {
+            } else if result.node.retention_strength > 0.4 {
                 MemoryState::Dormant
             } else if result.node.retention_strength > 0.1 {
                 MemoryState::Silent
@@ -275,9 +304,11 @@ pub async fn execute(
 
     // ====================================================================
     // STAGE 5B: Retrieval competition (Anderson et al. 1994)
+    // Skipped in precise mode (no need) and exhaustive mode (want all results)
     // ====================================================================
     let mut suppressed_count = 0_usize;
-    if filtered_results.len() > 1
+    if retrieval_mode == "balanced"
+        && filtered_results.len() > 1
         && let Ok(mut cog) = cognitive.try_lock()
     {
         let candidates: Vec<CompetitionCandidate> = filtered_results
@@ -321,21 +352,31 @@ pub async fn execute(
 
     // ====================================================================
     // STAGE 6: Spreading activation (find associated memories)
+    // Skipped in precise mode. Deeper (5 results) in exhaustive mode.
     // ====================================================================
-    let associations: Vec<Value> = if let Ok(mut cog) = cognitive.try_lock() {
-        if let Some(first) = filtered_results.first() {
-            let activated = cog.activation_network.activate(&first.node.id, 1.0);
-            activated
-                .iter()
-                .take(3)
-                .map(|a| {
-                    serde_json::json!({
-                        "memoryId": a.memory_id,
-                        "activation": a.activation,
-                        "distance": a.distance,
+    let activation_take = match retrieval_mode {
+        "precise" => 0,    // Skip entirely
+        "exhaustive" => 5, // Deeper graph traversal
+        _ => 3,            // Balanced default
+    };
+    let associations: Vec<Value> = if activation_take > 0 {
+        if let Ok(mut cog) = cognitive.try_lock() {
+            if let Some(first) = filtered_results.first() {
+                let activated = cog.activation_network.activate(&first.node.id, 1.0);
+                activated
+                    .iter()
+                    .take(activation_take)
+                    .map(|a| {
+                        serde_json::json!({
+                            "memoryId": a.memory_id,
+                            "activation": a.activation,
+                            "distance": a.distance,
+                        })
                     })
-                })
-                .collect()
+                    .collect()
+            } else {
+                vec![]
+            }
         } else {
             vec![]
         }
@@ -401,7 +442,7 @@ pub async fn execute(
     let mut budget_expandable: Vec<String> = Vec::new();
     let mut budget_tokens_used: Option<usize> = None;
     if let Some(budget) = args.token_budget {
-        let budget = budget.clamp(100, 10000) as usize;
+        let budget = budget.clamp(100, 100000) as usize;
         let budget_chars = budget * 4;
         let mut used = 0;
         let mut budgeted = Vec::new();
@@ -428,10 +469,16 @@ pub async fn execute(
     let mut response = serde_json::json!({
         "query": args.query,
         "method": "hybrid+cognitive",
+        "retrievalMode": retrieval_mode,
         "detailLevel": detail_level,
         "total": formatted.len(),
         "results": formatted,
     });
+
+    // Helpful hint when no results found
+    if formatted.is_empty() {
+        response["hint"] = serde_json::json!("No memories found. Use smart_ingest to add memories, or try a broader query.");
+    }
 
     // Include associations if any were found
     if !associations.is_empty() {
@@ -499,7 +546,7 @@ fn format_search_result(r: &vestige_core::SearchResult, detail_level: &str) -> V
             "validUntil": r.node.valid_until.map(|dt| dt.to_rfc3339()),
             "matchType": format!("{:?}", r.match_type),
         }),
-        // "summary" (default) — backwards compatible
+        // "summary" (default) — includes dates so AI never has to guess when a memory is from
         _ => serde_json::json!({
             "id": r.node.id,
             "content": r.node.content,
@@ -509,6 +556,8 @@ fn format_search_result(r: &vestige_core::SearchResult, detail_level: &str) -> V
             "nodeType": r.node.node_type,
             "tags": r.node.tags,
             "retentionStrength": r.node.retention_strength,
+            "createdAt": r.node.created_at.to_rfc3339(),
+            "updatedAt": r.node.updated_at.to_rfc3339(),
         }),
     }
 }
@@ -1004,10 +1053,11 @@ mod tests {
         let results = value["results"].as_array().unwrap();
         if !results.is_empty() {
             let first = &results[0];
-            // Summary should have content but not timestamps
+            // Summary should have content AND timestamps (v2.1: dates always visible)
             assert!(first["content"].is_string());
             assert!(first["id"].is_string());
-            assert!(first.get("createdAt").is_none() || first["createdAt"].is_null());
+            assert!(first["createdAt"].is_string(), "summary must include createdAt");
+            assert!(first["updatedAt"].is_string(), "summary must include updatedAt");
         }
     }
 
@@ -1106,6 +1156,6 @@ mod tests {
         let tb = &schema_value["properties"]["token_budget"];
         assert!(tb.is_object());
         assert_eq!(tb["minimum"], 100);
-        assert_eq!(tb["maximum"], 10000);
+        assert_eq!(tb["maximum"], 100000);
     }
 }

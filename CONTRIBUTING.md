@@ -26,7 +26,7 @@ vestige/
 
 ### Prerequisites
 
-- **Rust** (1.85+ stable): [rustup.rs](https://rustup.rs)
+- **Rust** (1.91+ stable): [rustup.rs](https://rustup.rs)
 - **Node.js** (v22+): [nodejs.org](https://nodejs.org)
 - **pnpm** (v9+): `npm install -g pnpm`
 
@@ -56,7 +56,7 @@ VESTIGE_TEST_MOCK_EMBEDDINGS=1 cargo test --workspace
 ## Running Tests
 
 ```bash
-# All tests (734 total)
+# All tests (746+ total)
 VESTIGE_TEST_MOCK_EMBEDDINGS=1 cargo test --workspace
 
 # Core library tests only (352 tests)
@@ -137,7 +137,7 @@ The MCP server and dashboard. Key modules:
 |--------|---------|
 | `server.rs` | MCP JSON-RPC server (rmcp 0.14) |
 | `cognitive.rs` | CognitiveEngine — 29 stateful modules |
-| `tools/` | One file per MCP tool (21 tools) |
+| `tools/` | One file per MCP tool (23 tools) |
 | `dashboard/` | Axum HTTP + WebSocket + event bus |
 
 ### apps/dashboard

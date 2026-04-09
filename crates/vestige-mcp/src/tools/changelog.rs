@@ -140,6 +140,11 @@ fn execute_system_wide(
         .get_recent_state_transitions(limit)
         .map_err(|e| e.to_string())?;
 
+    // Get dream history (Bug #9 fix — dreams were invisible to audit trail)
+    let dreams = storage
+        .get_dream_history(limit)
+        .unwrap_or_default();
+
     // Build unified event list
     let mut events: Vec<(DateTime<Utc>, Value)> = Vec::new();
 
@@ -170,6 +175,20 @@ fn execute_system_wide(
                 "toState": t.to_state,
                 "reasonType": t.reason_type,
                 "reasonData": t.reason_data,
+            }),
+        ));
+    }
+
+    for d in &dreams {
+        events.push((
+            d.dreamed_at,
+            serde_json::json!({
+                "type": "dream",
+                "timestamp": d.dreamed_at.to_rfc3339(),
+                "durationMs": d.duration_ms,
+                "memoriesReplayed": d.memories_replayed,
+                "connectionFound": d.connections_found,
+                "insightsGenerated": d.insights_generated,
             }),
         ));
     }

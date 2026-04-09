@@ -307,7 +307,7 @@ async fn main() {
             Ok(token) => {
                 let bind = std::env::var("VESTIGE_HTTP_BIND").unwrap_or_else(|_| "127.0.0.1".to_string());
                 eprintln!("Vestige HTTP transport: http://{}:{}/mcp", bind, http_port);
-                eprintln!("Auth token: {}...", &token[..8]);
+                eprintln!("Auth token: {}...", &token[..token.len().min(8)]);
                 tokio::spawn(async move {
                     if let Err(e) = protocol::http::start_http_transport(
                         http_storage,

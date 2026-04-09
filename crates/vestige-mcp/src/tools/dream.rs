@@ -6,7 +6,7 @@ use tokio::sync::Mutex;
 
 use chrono::Utc;
 use crate::cognitive::CognitiveEngine;
-use vestige_core::{DreamHistoryRecord, LinkType, Storage};
+use vestige_core::{DreamHistoryRecord, InsightRecord, LinkType, Storage};
 
 pub fn schema() -> serde_json::Value {
     serde_json::json!({
@@ -30,7 +30,8 @@ pub async fn execute(
         .as_ref()
         .and_then(|a| a.get("memory_count"))
         .and_then(|v| v.as_u64())
-        .unwrap_or(50) as usize;
+        .unwrap_or(50)
+        .min(500) as usize; // Cap at 500 to prevent O(N^2) hang
 
     // v1.9.0: Waking SWR tagging — preferential replay of tagged memories (70/30 split)
     let tagged_nodes = storage.get_waking_tagged_memories(memory_count as i32)
@@ -94,8 +95,28 @@ pub async fn execute(
     let all_connections = cog.dreamer.get_connections();
     drop(cog);
 
+    // v2.1.0: Persist dream insights to database (Bug #4 fix)
+    let mut insights_persisted = 0u64;
+    for insight in &insights {
+        let record = InsightRecord {
+            id: insight.id.clone(),
+            insight: insight.insight.clone(),
+            source_memories: insight.source_memories.clone(),
+            confidence: insight.confidence,
+            novelty_score: insight.novelty_score,
+            insight_type: format!("{:?}", insight.insight_type),
+            generated_at: insight.generated_at,
+            tags: insight.tags.clone(),
+            feedback: None,
+            applied_count: 0,
+        };
+        if storage.save_insight(&record).is_ok() {
+            insights_persisted += 1;
+        }
+    }
+
     // v1.9.0: Persist only NEW connections from this dream (skip accumulated ones)
-    let new_connections = &all_connections[pre_dream_count..];
+    let new_connections = all_connections.get(pre_dream_count..).unwrap_or(&[]);
     let mut connections_persisted = 0u64;
     {
         let now = Utc::now();
@@ -197,9 +218,11 @@ pub async fn execute(
             "novelty_score": i.novelty_score,
         })).collect::<Vec<_>>(),
         "connectionsPersisted": connections_persisted,
+        "insightsPersisted": insights_persisted,
         "stats": {
             "new_connections_found": dream_result.new_connections_found,
             "connections_persisted": connections_persisted,
+            "insights_persisted": insights_persisted,
             "memories_strengthened": dream_result.memories_strengthened,
             "memories_compressed": dream_result.memories_compressed,
             "insights_generated": dream_result.insights_generated.len(),
@@ -531,5 +554,56 @@ mod tests {
             "Storage should contain exactly {} connections",
             persisted
         );
+    }
+
+    #[tokio::test]
+    async fn test_dream_persists_insights() {
+        let (storage, _dir) = test_storage().await;
+
+        // Create diverse tagged memories to encourage insight generation
+        let topics = [
+            ("Rust borrow checker prevents data races", vec!["rust", "safety"]),
+            ("Rust ownership model ensures memory safety", vec!["rust", "safety"]),
+            ("Cargo manages Rust project dependencies", vec!["rust", "cargo"]),
+            ("Cargo.toml defines project configuration", vec!["rust", "cargo"]),
+            ("Unit tests use the #[test] attribute", vec!["rust", "testing"]),
+            ("Integration tests live in the tests directory", vec!["rust", "testing"]),
+            ("Clippy catches common Rust mistakes", vec!["rust", "tooling"]),
+            ("Rustfmt automatically formats code", vec!["rust", "tooling"]),
+        ];
+        for (content, tags) in &topics {
+            storage.ingest(vestige_core::IngestInput {
+                content: content.to_string(),
+                node_type: "fact".to_string(),
+                source: None, sentiment_score: 0.0, sentiment_magnitude: 0.0,
+                tags: tags.iter().map(|t| t.to_string()).collect(),
+                valid_from: None, valid_until: None,
+            }).unwrap();
+        }
+
+        let result = execute(&storage, &test_cognitive(), None).await.unwrap();
+        assert_eq!(result["status"], "dreamed");
+
+        let response_insights = result["insights"].as_array().unwrap();
+        let persisted_count = result["insightsPersisted"].as_u64().unwrap_or(0);
+
+        // If insights were generated, they should be persisted
+        if !response_insights.is_empty() {
+            assert!(persisted_count > 0, "Generated insights should be persisted to database");
+            let stored = storage.get_insights(100).unwrap();
+            assert_eq!(
+                stored.len(), persisted_count as usize,
+                "All {} persisted insights should be retrievable", persisted_count
+            );
+            // Verify insight fields
+            for insight in &stored {
+                assert!(!insight.id.is_empty(), "Insight ID should not be empty");
+                assert!(!insight.insight.is_empty(), "Insight text should not be empty");
+                assert!(insight.confidence >= 0.0 && insight.confidence <= 1.0);
+                assert!(insight.novelty_score >= 0.0);
+                assert!(insight.feedback.is_none(), "Fresh insight should have no feedback");
+                assert_eq!(insight.applied_count, 0);
+            }
+        }
     }
 }

@@ -29,7 +29,7 @@ pub mod speculative;
 
 // Re-exports for convenient access
 pub use adaptive_embedding::{AdaptiveEmbedder, ContentType, EmbeddingStrategy, Language};
-pub use chains::{ChainStep, ConnectionType, MemoryChainBuilder, MemoryPath, ReasoningChain};
+pub use chains::{ChainStep, Connection, ConnectionType, MemoryChainBuilder, MemoryNode, MemoryPath, ReasoningChain};
 pub use compression::{CompressedMemory, CompressionConfig, CompressionStats, MemoryCompressor};
 pub use cross_project::{
     ApplicableKnowledge, CrossProjectLearner, ProjectContext, UniversalPattern,

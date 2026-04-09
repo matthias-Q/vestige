@@ -159,7 +159,7 @@ impl McpServer {
 
     /// Handle tools/list request
     async fn handle_tools_list(&self) -> Result<serde_json::Value, JsonRpcError> {
-        // v1.8: 19 tools. Deprecated tools still work via redirects in handle_tools_call.
+        // v2.0.4: 23 tools. Deprecated tools still work via redirects in handle_tools_call.
         let tools = vec![
             // ================================================================
             // UNIFIED TOOLS (v1.1+)
@@ -292,6 +292,19 @@ impl McpServer {
                 name: "memory_graph".to_string(),
                 description: Some("Subgraph export for visualization. Input: center_id or query, depth (1-3), max_nodes. Returns nodes with force-directed layout positions and edges with weights. Powers memory graph visualization.".to_string()),
                 input_schema: tools::graph::schema(),
+            },
+            // ================================================================
+            // DEEP REFERENCE (v2.0.4+) — replaces cross_reference
+            // ================================================================
+            ToolDescription {
+                name: "deep_reference".to_string(),
+                description: Some("Deep cognitive reasoning across memories. Combines FSRS-6 trust scoring, spreading activation, temporal supersession, dream insights, and contradiction analysis to build a complete understanding of a topic. Returns trust-scored evidence, fact evolution timeline, and a recommended answer. Use this when accuracy matters.".to_string()),
+                input_schema: tools::cross_reference::schema(),
+            },
+            ToolDescription {
+                name: "cross_reference".to_string(),
+                description: Some("Alias for deep_reference. Connect the dots across memories with cognitive reasoning.".to_string()),
+                input_schema: tools::cross_reference::schema(),
             },
         ];
 
@@ -644,6 +657,7 @@ impl McpServer {
             // ================================================================
             "memory_health" => tools::health::execute(&self.storage, request.arguments).await,
             "memory_graph" => tools::graph::execute(&self.storage, request.arguments).await,
+            "deep_reference" | "cross_reference" => tools::cross_reference::execute(&self.storage, &self.cognitive, request.arguments).await,
 
             name => {
                 return Err(JsonRpcError::method_not_found_with_message(&format!(
@@ -1187,8 +1201,8 @@ mod tests {
         let result = response.result.unwrap();
         let tools = result["tools"].as_array().unwrap();
 
-        // v1.9: 21 tools (4 unified + 1 core + 2 temporal + 5 maintenance + 2 auto-save + 3 cognitive + 1 restore + 1 session_context + 2 autonomic)
-        assert_eq!(tools.len(), 21, "Expected exactly 21 tools in v1.9+");
+        // v2.0.4: 23 tools (4 unified + 1 core + 2 temporal + 5 maintenance + 2 auto-save + 3 cognitive + 1 restore + 1 session_context + 2 autonomic + 1 deep_reference + 1 cross_reference alias)
+        assert_eq!(tools.len(), 23, "Expected exactly 23 tools in v2.0.4+");
 
         let tool_names: Vec<&str> = tools
             .iter()
@@ -1239,6 +1253,10 @@ mod tests {
         // Autonomic tools (v1.9)
         assert!(tool_names.contains(&"memory_health"));
         assert!(tool_names.contains(&"memory_graph"));
+
+        // Deep reference + cross_reference alias (v2.0.4)
+        assert!(tool_names.contains(&"deep_reference"));
+        assert!(tool_names.contains(&"cross_reference"));
     }
 
     #[tokio::test]

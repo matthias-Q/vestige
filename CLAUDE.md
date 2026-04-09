@@ -1,6 +1,8 @@
-# Vestige v2.0.1 — Cognitive Memory System
+# Vestige v2.0.4 — Cognitive Memory & Reasoning System
 
-Vestige is your long-term memory. 29 stateful cognitive modules implement real neuroscience: FSRS-6 spaced repetition, synaptic tagging, prediction error gating, hippocampal indexing, spreading activation, reconsolidation, and dual-strength memory theory. **Use it automatically. Use it aggressively.**
+Vestige is your long-term memory AND reasoning engine. 29 stateful cognitive modules implement real neuroscience: FSRS-6 spaced repetition, synaptic tagging, prediction error gating, hippocampal indexing, spreading activation, reconsolidation, and dual-strength memory theory. **Use it automatically. Use it aggressively.**
+
+**NEW: `deep_reference` — call this for ALL factual questions.** It doesn't just retrieve — it REASONS across memories with FSRS-6 trust scoring, intent classification, contradiction analysis, and generates a pre-built reasoning chain. Read the `reasoning` field FIRST.
 
 ---
 
@@ -28,14 +30,14 @@ Say "Remembering..." then retrieve context before answering.
 
 ---
 
-## Complete Tool Reference (21 Tools)
+## Complete Tool Reference (23 Tools)
 
 ### session_context — One-Call Initialization
 ```
 session_context({
   queries: ["user preferences", "project context"],  // search queries
   context: { codebase: "project-name", topics: ["svelte", "rust"], file: "src/main.rs" },
-  token_budget: 2000,        // 100-10000, controls response size
+  token_budget: 2000,        // 100-100000, controls response size
   include_status: true,       // system health
   include_intentions: true,   // triggered reminders
   include_predictions: true   // proactive memory predictions
@@ -74,10 +76,13 @@ search({
   min_similarity: 0.5,        // minimum cosine similarity
   detail_level: "summary",    // brief|summary|full
   context_topics: ["rust", "debugging"],  // boost topic-matching memories
-  token_budget: 3000          // 100-10000, truncate to fit
+  token_budget: 3000,         // 100-100000, truncate to fit
+  retrieval_mode: "balanced"  // precise|balanced|exhaustive (v2.1)
 })
 ```
-Pipeline: Overfetch (3x, BM25+semantic) → Rerank (cross-encoder) → Temporal boost → Accessibility filter (FSRS-6) → Context match (Tulving 1973) → Competition (Anderson 1994) → Spreading activation. **Every search strengthens the memories it finds (Testing Effect).**
+Retrieval modes: `precise` (fast, no activation/competition), `balanced` (default 7-stage pipeline), `exhaustive` (5x overfetch, deep graph traversal, no competition suppression).
+
+Pipeline: Overfetch → Rerank (cross-encoder) → Temporal boost → Accessibility filter (FSRS-6) → Context match (Tulving 1973) → Competition (Anderson 1994) → Spreading activation. **Every search strengthens the memories it finds (Testing Effect).**
 
 ### memory — Read, Edit, Delete, Promote, Demote
 ```
@@ -87,8 +92,10 @@ memory({ action: "delete", id: "uuid" })
 memory({ action: "promote", id: "uuid", reason: "was helpful" })  // +0.20 retrieval, +0.10 retention, 1.5x stability
 memory({ action: "demote", id: "uuid", reason: "was wrong" })     // -0.30 retrieval, -0.15 retention, 0.5x stability
 memory({ action: "state", id: "uuid" })          // Active/Dormant/Silent/Unavailable + accessibility score
+memory({ action: "get_batch", ids: ["uuid1", "uuid2", "uuid3"] })  // retrieve up to 20 full memories at once (v2.1)
 ```
 Promote/demote does NOT delete — it adjusts ranking. Demoted memories rank lower; alternatives surface instead.
+`get_batch` is designed for batch retrieval of expandable overflow IDs from search/session_context.
 
 ### codebase — Code Patterns & Architectural Decisions
 ```
@@ -184,6 +191,27 @@ memory_graph({ query: "search term", depth: 2, max_nodes: 50 })
 memory_graph({ center_id: "uuid", depth: 3, max_nodes: 100 })
 ```
 Returns nodes with force-directed positions + edges with weights.
+
+### deep_reference — Cognitive Reasoning Engine (v2.0.4) ★ USE THIS FOR ALL FACTUAL QUESTIONS
+```
+deep_reference({ query: "What port does the dev server use?" })
+deep_reference({ query: "Should I use prefix caching with vLLM?", depth: 30 })
+```
+**THE killer tool.** 8-stage cognitive reasoning pipeline:
+1. Broad retrieval + cross-encoder reranking
+2. Spreading activation expansion (finds connected memories search misses)
+3. FSRS-6 trust scoring (retention × stability × reps ÷ lapses)
+4. Intent classification (FactCheck / Timeline / RootCause / Comparison / Synthesis)
+5. Temporal supersession (newer high-trust replaces older)
+6. Trust-weighted contradiction analysis (only flags conflicts between strong memories)
+7. Relation assessment (Supports / Contradicts / Supersedes / Irrelevant per pair)
+8. **Template reasoning chain** — pre-built natural language reasoning the AI validates
+
+Parameters: `query` (required), `depth` (5-50, default 20).
+
+Returns: `intent`, `reasoning` (THE KEY FIELD — read this first), `recommended` (highest-trust answer), `evidence` (trust-sorted), `contradictions`, `superseded`, `evolution`, `related_insights`, `confidence`.
+
+`cross_reference` is a backward-compatible alias that calls `deep_reference`.
 
 ### Maintenance Tools
 ```
@@ -306,8 +334,8 @@ Memory is retrieval. Searching strengthens memory. Search liberally, save aggres
 
 ## Development
 
-- **Crate:** `vestige-mcp` v2.0.1, Rust 2024 edition, MSRV 1.91
-- **Tests:** 1,238 (352 unit + 192 E2E + cognitive + journey + extreme), zero warnings
+- **Crate:** `vestige-mcp` v2.0.4, Rust 2024 edition, MSRV 1.91
+- **Tests:** 758 (406 mcp + 352 core), zero warnings
 - **Build:** `cargo build --release -p vestige-mcp` (features: `embeddings` + `vector-search`)
 - **Build (no embeddings):** `cargo build --release -p vestige-mcp --no-default-features`
 - **Bench:** `cargo bench -p vestige-core`
@@ -317,4 +345,4 @@ Memory is retrieval. Searching strengthens memory. Search liberally, save aggres
 - **Vector index:** USearch HNSW (20x faster than FAISS)
 - **Binaries:** `vestige-mcp` (MCP server), `vestige` (CLI), `vestige-restore`
 - **Dashboard:** SvelteKit 2 + Svelte 5 + Three.js + Tailwind 4, embedded at `/dashboard`
-- **Env vars:** `VESTIGE_DASHBOARD_PORT` (default 3927), `VESTIGE_CONSOLIDATION_INTERVAL_HOURS` (default 6), `RUST_LOG`
+- **Env vars:** `VESTIGE_DASHBOARD_PORT` (default 3927), `VESTIGE_HTTP_PORT` (default 3928), `VESTIGE_HTTP_BIND` (default 127.0.0.1), `VESTIGE_AUTH_TOKEN` (auto-generated), `VESTIGE_CONSOLIDATION_INTERVAL_HOURS` (default 6), `RUST_LOG`

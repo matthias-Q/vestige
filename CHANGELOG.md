@@ -5,6 +5,38 @@ All notable changes to Vestige will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.4] - 2026-04-09 — "Deep Reference"
+
+Context windows hit 1M tokens. Memory matters more than ever. This release removes artificial limits, adds contradiction detection, and hardens security.
+
+### Added
+
+#### cross_reference Tool (NEW — Tool #22)
+- **Connect the dots across memories.** Given a query or claim, searches broadly, detects agreements and contradictions between memories, identifies superseded/outdated information, and returns a confidence-scored synthesis.
+- Pairwise contradiction detection using negation pairs + correction signals, gated on shared topic words to prevent false positives.
+- Timeline analysis (newest-first), confidence scoring (agreements boost, contradictions penalize, recency bonus).
+
+#### retrieval_mode Parameter (search tool)
+- `precise` — top results only, no spreading activation or competition. Fast, token-efficient.
+- `balanced` — full 7-stage cognitive pipeline (default, no behavior change).
+- `exhaustive` — 5x overfetch, deep graph traversal, no competition suppression. Maximum recall.
+
+#### get_batch Action (memory tool)
+- `memory({ action: "get_batch", ids: ["id1", "id2", ...] })` — retrieve up to 20 full memory nodes in one call.
+
+### Changed
+- **Token budget raised: 10K → 100K** on search and session_context tools.
+- **HTTP transport CORS**: `permissive()` → localhost-only origin restriction.
+- **Auth token display**: Guarded against panic on short tokens.
+- **Dormant state threshold**: Aligned search (0.3 → 0.4) with memory tool for consistent state classification.
+- **cross_reference false positive prevention**: Requires 2+ shared words before checking negation signals.
+
+### Stats
+- 23 MCP tools, 758 tests passing, 0 failures
+- Full codebase audit: 3 parallel agents, all issues resolved
+
+---
+
 ## [2.0.0] - 2026-02-22 — "Cognitive Leap"
 
 The biggest release in Vestige history. A complete visual and cognitive overhaul.

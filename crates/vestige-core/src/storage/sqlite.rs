@@ -227,6 +227,7 @@ impl Storage {
             .lock()
             .map_err(|_| StorageError::Init("Vector index lock poisoned".to_string()))?;
 
+        let mut load_failures = 0u32;
         for (node_id, embedding_bytes) in embeddings {
             if let Some(embedding) = Embedding::from_bytes(&embedding_bytes) {
                 // Handle Matryoshka migration: old 768-dim → truncate to 256-dim
@@ -236,9 +237,13 @@ impl Storage {
                     embedding.vector
                 };
                 if let Err(e) = index.add(&node_id, &vector) {
+                    load_failures += 1;
                     tracing::warn!("Failed to load embedding for {}: {}", node_id, e);
                 }
             }
+        }
+        if load_failures > 0 {
+            tracing::error!(count = load_failures, "Vector index: {} embeddings failed to load", load_failures);
         }
 
         Ok(())
@@ -399,7 +404,11 @@ impl Storage {
                     superseded_id: None,
                     similarity: None,
                     prediction_error: Some(prediction_error),
-                    reason: format!("Created new memory: {:?}. Related: {:?}", reason, related_memory_ids),
+                    reason: if related_memory_ids.is_empty() {
+                        format!("Created new memory: {:?}", reason)
+                    } else {
+                        format!("Created new memory: {:?}. Semantically similar (not linked): {:?}", reason, related_memory_ids)
+                    },
                 })
             }
             GateDecision::Update { target_id, similarity, update_type, prediction_error } => {
@@ -667,7 +676,13 @@ impl Storage {
     /// Convert a row to KnowledgeNode
     fn row_to_node(row: &rusqlite::Row) -> rusqlite::Result<KnowledgeNode> {
         let tags_json: String = row.get("tags")?;
-        let tags: Vec<String> = serde_json::from_str(&tags_json).unwrap_or_default();
+        let tags: Vec<String> = match serde_json::from_str(&tags_json) {
+            Ok(t) => t,
+            Err(e) => {
+                tracing::warn!(raw = %tags_json, "Failed to deserialize tags JSON, using empty: {}", e);
+                Vec::new()
+            }
+        };
 
         let created_at: String = row.get("created_at")?;
         let updated_at: String = row.get("updated_at")?;
@@ -955,6 +970,8 @@ impl Storage {
     pub fn strengthen_batch_on_access(&self, ids: &[&str]) -> Result<()> {
         for id in ids {
             self.strengthen_on_access(id)?;
+            // Also record access in memory_states for audit trail (Bug #1 fix)
+            let _ = self.record_memory_access(id);
         }
         Ok(())
     }
@@ -3221,6 +3238,42 @@ impl Storage {
         Ok(result.and_then(|s| {
             DateTime::parse_from_rfc3339(&s).ok().map(|dt| dt.with_timezone(&Utc))
         }))
+    }
+
+    /// Get dream history (most recent first)
+    pub fn get_dream_history(&self, limit: i32) -> Result<Vec<DreamHistoryRecord>> {
+        let reader = self.reader.lock()
+            .map_err(|_| StorageError::Init("Reader lock poisoned".into()))?;
+        let mut stmt = reader.prepare(
+            "SELECT dreamed_at, duration_ms, memories_replayed, connections_found,
+                    insights_generated, memories_strengthened, memories_compressed,
+                    phase_nrem1_ms, phase_nrem3_ms, phase_rem_ms, phase_integration_ms,
+                    summaries_generated, emotional_memories_processed, creative_connections_found
+             FROM dream_history ORDER BY dreamed_at DESC LIMIT ?1"
+        )?;
+        let records = stmt.query_map(params![limit], |row| {
+            let dreamed_at_str: String = row.get(0)?;
+            let dreamed_at = DateTime::parse_from_rfc3339(&dreamed_at_str)
+                .map(|dt| dt.with_timezone(&Utc))
+                .unwrap_or_else(|_| Utc::now());
+            Ok(DreamHistoryRecord {
+                dreamed_at,
+                duration_ms: row.get(1)?,
+                memories_replayed: row.get(2)?,
+                connections_found: row.get(3)?,
+                insights_generated: row.get(4)?,
+                memories_strengthened: row.get(5)?,
+                memories_compressed: row.get(6)?,
+                phase_nrem1_ms: row.get(7)?,
+                phase_nrem3_ms: row.get(8)?,
+                phase_rem_ms: row.get(9)?,
+                phase_integration_ms: row.get(10)?,
+                summaries_generated: row.get(11)?,
+                emotional_memories_processed: row.get(12)?,
+                creative_connections_found: row.get(13)?,
+            })
+        })?.collect::<std::result::Result<Vec<_>, _>>()?;
+        Ok(records)
     }
 
     /// Count memories created since a given timestamp

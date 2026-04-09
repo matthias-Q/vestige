@@ -95,7 +95,7 @@ async fn read_recent(storage: &Arc<Storage>, limit: i32) -> Result<String, Strin
             serde_json::json!({
                 "id": n.id,
                 "summary": if n.content.len() > 200 {
-                    format!("{}...", &n.content[..200])
+                    format!("{}...", &n.content[..n.content.floor_char_boundary(200)])
                 } else {
                     n.content.clone()
                 },
@@ -139,7 +139,7 @@ async fn read_decaying(storage: &Arc<Storage>) -> Result<String, String> {
             serde_json::json!({
                 "id": n.id,
                 "summary": if n.content.len() > 200 {
-                    format!("{}...", &n.content[..200])
+                    format!("{}...", &n.content[..n.content.floor_char_boundary(200)])
                 } else {
                     n.content.clone()
                 },
@@ -180,7 +180,7 @@ async fn read_due(storage: &Arc<Storage>) -> Result<String, String> {
             serde_json::json!({
                 "id": n.id,
                 "summary": if n.content.len() > 200 {
-                    format!("{}...", &n.content[..200])
+                    format!("{}...", &n.content[..n.content.floor_char_boundary(200)])
                 } else {
                     n.content.clone()
                 },

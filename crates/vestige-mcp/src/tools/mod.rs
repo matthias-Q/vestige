@@ -37,6 +37,9 @@ pub mod session_context;
 pub mod health;
 pub mod graph;
 
+// v2.1: Cross-reference (connect the dots)
+pub mod cross_reference;
+
 // Deprecated/internal tools — not advertised in the public MCP tools/list,
 // but some functions are actively dispatched for backwards compatibility
 // and internal cognitive operations. #[allow(dead_code)] suppresses warnings

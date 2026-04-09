@@ -315,7 +315,10 @@ const MIGRATION_V4_UP: &str = r#"
 -- TEMPORAL KNOWLEDGE GRAPH (Like Zep's Graphiti)
 -- ============================================================================
 
--- Knowledge edges for temporal reasoning
+-- DEPRECATED (v2.1.0): knowledge_edges is unused. All graph edges use
+-- memory_connections (migration V3). This table was designed for bi-temporal
+-- edge support but was never wired. Retained for schema compatibility with
+-- existing databases. Do NOT add queries against this table.
 CREATE TABLE IF NOT EXISTS knowledge_edges (
     id TEXT PRIMARY KEY,
     source_id TEXT NOT NULL,

@@ -108,7 +108,20 @@ pub async fn start_http_transport(
             ServiceBuilder::new()
                 .layer(DefaultBodyLimit::max(MAX_BODY_SIZE))
                 .layer(ConcurrencyLimitLayer::new(CONCURRENCY_LIMIT))
-                .layer(CorsLayer::permissive()),
+                .layer(
+                    CorsLayer::new()
+                        .allow_origin(
+                            [
+                                format!("http://127.0.0.1:{}", port),
+                                format!("http://localhost:{}", port),
+                            ]
+                            .into_iter()
+                            .filter_map(|s| s.parse().ok())
+                            .collect::<Vec<_>>(),
+                        )
+                        .allow_methods([axum::http::Method::POST, axum::http::Method::DELETE, axum::http::Method::OPTIONS])
+                        .allow_headers([axum::http::header::CONTENT_TYPE, axum::http::header::AUTHORIZATION])
+                ),
         )
         .with_state(state);
 
@@ -229,13 +242,13 @@ async fn post_mcp(
         match response {
             Some(resp) => {
                 let mut resp_headers = HeaderMap::new();
-                resp_headers.insert("mcp-session-id", session_id.parse().unwrap());
+                resp_headers.insert("mcp-session-id", session_id.parse().unwrap_or_else(|_| axum::http::HeaderValue::from_static("invalid")));
                 (StatusCode::OK, resp_headers, Json(resp)).into_response()
             }
             None => {
                 // Notifications return 202
                 let mut resp_headers = HeaderMap::new();
-                resp_headers.insert("mcp-session-id", session_id.parse().unwrap());
+                resp_headers.insert("mcp-session-id", session_id.parse().unwrap_or_else(|_| axum::http::HeaderValue::from_static("invalid")));
                 (StatusCode::ACCEPTED, resp_headers).into_response()
             }
         }
@@ -275,7 +288,7 @@ async fn post_mcp(
         };
 
         let mut resp_headers = HeaderMap::new();
-        resp_headers.insert("mcp-session-id", session_id.parse().unwrap());
+        resp_headers.insert("mcp-session-id", session_id.parse().unwrap_or_else(|_| axum::http::HeaderValue::from_static("invalid")));
 
         match response {
             Some(resp) => (StatusCode::OK, resp_headers, Json(resp)).into_response(),
