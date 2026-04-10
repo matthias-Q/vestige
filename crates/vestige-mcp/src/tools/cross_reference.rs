@@ -568,21 +568,33 @@ pub async fn execute(
     // ====================================================================
     // STAGE 8: Synthesis + Reasoning Chain Generation
     // ====================================================================
-    // Find the recommended answer: highest trust, not superseded, most recent
-    let recommended = scored.iter()
+    // Composite score: half query relevance (combined_score from
+    // hybrid_search + reranker) and half FSRS-6 trust. Both signals belong
+    // in the recommended pick — relevance picks the right *topic*, trust
+    // picks the most reliable variant within that topic.
+    let composite = |s: &ScoredMemory| s.combined_score as f64 * 0.5 + s.trust * 0.5;
+
+    // Find the recommended answer: highest composite, not superseded, most recent
+    let recommended = scored
+        .iter()
         .filter(|s| !superseded_ids.contains(&s.id))
         .max_by(|a, b| {
-            // Primary: trust. Secondary: date.
-            a.trust.partial_cmp(&b.trust)
+            composite(a)
+                .partial_cmp(&composite(b))
                 .unwrap_or(std::cmp::Ordering::Equal)
                 .then_with(|| a.updated_at.cmp(&b.updated_at))
         });
 
-    // Build evidence list (top memories by trust, not superseded)
-    let mut non_superseded: Vec<&ScoredMemory> = scored.iter()
+    // Build evidence list (top memories by composite, not superseded)
+    let mut non_superseded: Vec<&ScoredMemory> = scored
+        .iter()
         .filter(|s| !superseded_ids.contains(&s.id))
         .collect();
-    non_superseded.sort_by(|a, b| b.trust.partial_cmp(&a.trust).unwrap_or(std::cmp::Ordering::Equal));
+    non_superseded.sort_by(|a, b| {
+        composite(b)
+            .partial_cmp(&composite(a))
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
     let evidence: Vec<Value> = non_superseded.iter()
         .take(10)
         .enumerate()
@@ -605,8 +617,10 @@ pub async fn execute(
         .collect();
     evolution.truncate(15); // cap timeline length
 
-    // Confidence scoring
-    let base_confidence = recommended.map(|r| r.trust).unwrap_or(0.0);
+    // Confidence scoring: derived from the same composite as `recommended`,
+    // so confidence actually moves with query relevance instead of being a
+    // function of trust + corpus size alone.
+    let base_confidence = recommended.map(composite).unwrap_or(0.0);
     let agreement_boost = (evidence.len() as f64 * 0.03).min(0.2);
     let contradiction_penalty = contradictions.len() as f64 * 0.1;
     let confidence = (base_confidence + agreement_boost - contradiction_penalty).clamp(0.0, 1.0);
@@ -685,6 +699,129 @@ pub async fn execute(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::cognitive::CognitiveEngine;
+    use std::sync::Arc;
+    use tempfile::TempDir;
+    use tokio::sync::Mutex;
+    use vestige_core::Storage;
+
+    fn test_cognitive() -> Arc<Mutex<CognitiveEngine>> {
+        Arc::new(Mutex::new(CognitiveEngine::new()))
+    }
+
+    async fn test_storage() -> (Arc<Storage>, TempDir) {
+        let dir = TempDir::new().unwrap();
+        let storage = Storage::new(Some(dir.path().join("test.db"))).unwrap();
+        (Arc::new(storage), dir)
+    }
+
+    async fn ingest_one(storage: &Arc<Storage>, content: &str, tags: &[&str]) -> String {
+        storage
+            .ingest(vestige_core::IngestInput {
+                content: content.to_string(),
+                node_type: "fact".to_string(),
+                source: None,
+                sentiment_score: 0.0,
+                sentiment_magnitude: 0.0,
+                tags: tags.iter().map(|s| s.to_string()).collect(),
+                valid_from: None,
+                valid_until: None,
+            })
+            .unwrap()
+            .id
+    }
+
+    // ========================================================================
+    // BUG A: `recommended` is picked by FSRS trust only, ignoring query relevance.
+    // ========================================================================
+    #[tokio::test]
+    async fn test_recommended_uses_query_relevance_not_just_trust() {
+        let (storage, _dir) = test_storage().await;
+
+        let id_a = ingest_one(
+            &storage,
+            "PostgreSQL connection pooling with pgbouncer transaction mode \
+             requires careful tuning of max_connections and pool_mode settings.",
+            &["postgres", "database"],
+        )
+        .await;
+
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+
+        let _id_b = ingest_one(
+            &storage,
+            "Making sourdough bread requires a mature starter, long bulk \
+             fermentation, and attention to dough hydration levels.",
+            &["baking", "bread"],
+        )
+        .await;
+
+        let args = serde_json::json!({
+            "query": "PostgreSQL connection pooling pgbouncer max_connections"
+        });
+        let result = execute(&storage, &test_cognitive(), Some(args))
+            .await
+            .expect("execute should succeed");
+
+        assert_eq!(
+            result["recommended"]["memory_id"].as_str(),
+            Some(id_a.as_str()),
+            "Expected recommended={} (matches query). Got {:?}. \
+             Root cause: lines 565-572 select `recommended` by trust only, \
+             discarding the combined_score signal from hybrid_search + reranker.",
+            id_a,
+            result["recommended"]["memory_id"]
+        );
+    }
+
+    // ========================================================================
+    // Confidence sanity: must vary with query relevance.
+    // ========================================================================
+    #[tokio::test]
+    async fn test_confidence_varies_with_query_relevance() {
+        let (storage, _dir) = test_storage().await;
+
+        ingest_one(
+            &storage,
+            "The Borrow Checker enforces Rust's ownership rules at compile time, \
+             preventing data races and use-after-free without a garbage collector.",
+            &["rust"],
+        )
+        .await;
+
+        let relevant = execute(
+            &storage,
+            &test_cognitive(),
+            Some(serde_json::json!({
+                "query": "Rust borrow checker ownership compile time"
+            })),
+        )
+        .await
+        .expect("execute should succeed");
+
+        let irrelevant = execute(
+            &storage,
+            &test_cognitive(),
+            Some(serde_json::json!({
+                "query": "18th century Dutch maritime trade routes"
+            })),
+        )
+        .await
+        .expect("execute should succeed");
+
+        let rel_conf = relevant["confidence"].as_f64().unwrap_or(0.0);
+        let irr_conf = irrelevant["confidence"].as_f64().unwrap_or(0.0);
+
+        assert!(
+            rel_conf > irr_conf,
+            "Confidence should be higher for a relevant query. Got \
+             relevant={}, irrelevant={}. Currently `confidence` derives from \
+             recommended.trust + evidence count (lines 602-605), both \
+             invariant under query changes.",
+            rel_conf,
+            irr_conf
+        );
+    }
 
     #[test]
     fn test_schema_structure() {
