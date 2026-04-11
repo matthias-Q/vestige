@@ -48,6 +48,7 @@ use server::McpServer;
 struct Config {
     data_dir: Option<PathBuf>,
     http_port: u16,
+    dashboard_enabled: bool,
 }
 
 /// Parse command-line arguments into a `Config`.
@@ -59,6 +60,9 @@ fn parse_args() -> Config {
         .ok()
         .and_then(|s| s.parse().ok())
         .unwrap_or(3928);
+    let dashboard_enabled = std::env::var("VESTIGE_DASHBOARD_ENABLED")
+        .map(|v| v.eq_ignore_ascii_case("true") || v == "1")
+        .unwrap_or(false);
     let mut i = 1;
 
     while i < args.len() {
@@ -81,6 +85,7 @@ fn parse_args() -> Config {
                 println!("    RUST_LOG                  Log level filter (e.g., debug, info, warn, error)");
                 println!("    VESTIGE_AUTH_TOKEN         Override the bearer token for HTTP transport");
                 println!("    VESTIGE_HTTP_PORT          HTTP transport port (default: 3928)");
+                println!("    VESTIGE_DASHBOARD_ENABLED     Enable dashboard (default: disabled)");
                 println!("    VESTIGE_DASHBOARD_PORT     Dashboard port (default: 3927)");
                 println!();
                 println!("EXAMPLES:");
@@ -148,7 +153,7 @@ fn parse_args() -> Config {
         i += 1;
     }
 
-    Config { data_dir, http_port }
+    Config { data_dir, http_port, dashboard_enabled }
 }
 
 #[tokio::main]
@@ -271,7 +276,7 @@ async fn main() {
     let (event_tx, _) = tokio::sync::broadcast::channel::<vestige_mcp::dashboard::events::VestigeEvent>(1024);
 
     // Spawn dashboard HTTP server alongside MCP server (now with CognitiveEngine access)
-    {
+    if config.dashboard_enabled {
         let dashboard_port = std::env::var("VESTIGE_DASHBOARD_PORT")
             .ok()
             .and_then(|s| s.parse::<u16>().ok())
@@ -294,6 +299,8 @@ async fn main() {
                 }
             }
         });
+    } else {
+        info!("Dashboard disabled by VESTIGE_DASHBOARD_ENABLED=false");
     }
 
     // Start HTTP MCP transport (Streamable HTTP for Claude.ai / remote clients)
