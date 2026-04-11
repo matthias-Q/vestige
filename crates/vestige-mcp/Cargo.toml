@@ -13,6 +13,9 @@ repository = "https://github.com/samvallad33/vestige"
 default = ["embeddings", "vector-search"]
 embeddings = ["vestige-core/embeddings"]
 vector-search = ["vestige-core/vector-search"]
+# For systems with glibc < 2.38 — use runtime-loaded ORT instead of the downloaded pre-built binary.
+# Usage: cargo install --path crates/vestige-mcp --no-default-features --features ort-dynamic,vector-search
+ort-dynamic = ["vestige-core/ort-dynamic"]
 
 [[bin]]
 name = "vestige-mcp"
@@ -32,7 +35,7 @@ path = "src/bin/cli.rs"
 # ============================================================================
 # Includes: FSRS-6, spreading activation, synaptic tagging, hippocampal indexing,
 # memory states, context memory, importance signals, dreams, and more
-vestige-core = { version = "2.0.4", path = "../vestige-core", default-features = false, features = ["bundled-sqlite"] }
+vestige-core = { version = "2.0.4", path = "../vestige-core", default-features = false, features = ["bundled-sqlite", "embeddings", "vector-search"] }
 
 # ============================================================================
 # MCP Server Dependencies
