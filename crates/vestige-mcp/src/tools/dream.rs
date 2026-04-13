@@ -89,7 +89,12 @@ pub async fn execute(
     }).collect();
 
     let cog = cognitive.lock().await;
-    let pre_dream_count = cog.dreamer.get_connections().len();
+    // Capture start time before the dream so we can identify newly discovered
+    // connections by timestamp rather than by buffer position. This is robust
+    // against the composite-score eviction sort in store_connections, which
+    // reorders the buffer and makes positional slicing (pre_dream_count..)
+    // unreliable.
+    let dream_start = Utc::now();
     let dream_result = cog.dreamer.dream(&dream_memories).await;
     let insights = cog.dreamer.synthesize_insights(&dream_memories);
     let all_connections = cog.dreamer.get_connections();
@@ -115,12 +120,17 @@ pub async fn execute(
         }
     }
 
-    // v1.9.0: Persist only NEW connections from this dream (skip accumulated ones)
-    let new_connections = all_connections.get(pre_dream_count..).unwrap_or(&[]);
+    // Identify new connections from this dream by timestamp rather than buffer
+    // position — positional slicing is broken after composite-score eviction
+    // reorders the buffer.
+    let new_connections: Vec<&vestige_core::DiscoveredConnection> = all_connections
+        .iter()
+        .filter(|c| c.discovered_at >= dream_start)
+        .collect();
     let mut connections_persisted = 0u64;
     {
         let now = Utc::now();
-        for conn in new_connections {
+        for conn in new_connections.iter() {
             let link_type = match conn.connection_type {
                 vestige_core::DiscoveredConnectionType::Semantic => "semantic",
                 vestige_core::DiscoveredConnectionType::SharedConcept => "shared_concepts",
@@ -162,7 +172,7 @@ pub async fn execute(
     // Hydrate live cognitive engine with newly persisted connections
     if connections_persisted > 0 {
         let mut cog = cognitive.lock().await;
-        for conn in new_connections {
+        for conn in new_connections.iter() {
             let link_type_enum = match conn.connection_type {
                 vestige_core::DiscoveredConnectionType::Semantic => LinkType::Semantic,
                 vestige_core::DiscoveredConnectionType::SharedConcept => LinkType::Semantic,

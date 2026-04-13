@@ -1076,6 +1076,9 @@ pub struct DiscoveredConnection {
     pub connection_type: DiscoveredConnectionType,
     /// Reasoning for this connection
     pub reasoning: String,
+    /// When this connection was discovered (used for recency scoring during eviction)
+    #[serde(default = "Utc::now")]
+    pub discovered_at: DateTime<Utc>,
 }
 
 /// Types of connections discovered during dreaming
@@ -1277,6 +1280,7 @@ impl MemoryDreamer {
                         similarity,
                         connection_type,
                         reasoning,
+                        discovered_at: Utc::now(),
                     });
                 }
             }
@@ -1699,10 +1703,38 @@ impl MemoryDreamer {
     fn store_connections(&self, connections: &[DiscoveredConnection]) {
         if let Ok(mut stored) = self.connections.write() {
             stored.extend(connections.iter().cloned());
-            // Keep last 1000 connections
+            // Keep the 1000 highest-scoring connections using a composite score
+            // that balances quality (similarity) and recency (age-based decay).
+            //
+            // score = similarity * 0.6 + recency * 0.4
+            //
+            // Recency uses exponential decay with a 7-day half-life:
+            //   recency = 0.5 ^ (age_days / 7.0)
+            //
+            // This means:
+            //   - A brand-new connection with similarity 0.5 scores 0.70
+            //   - A week-old connection with similarity 0.9 scores 0.74
+            //   - A month-old connection with similarity 0.9 scores 0.58
+            // Strong old connections are retained longer than weak new ones,
+            // but eventually yield to fresh high-quality discoveries.
             let len = stored.len();
             if len > 1000 {
-                stored.drain(0..(len - 1000));
+                let now = Utc::now();
+                stored.sort_unstable_by(|a, b| {
+                    let score = |c: &DiscoveredConnection| -> f64 {
+                        let age_days = now
+                            .signed_duration_since(c.discovered_at)
+                            .num_seconds()
+                            .max(0) as f64
+                            / 86_400.0;
+                        let recency = (0.5_f64).powf(age_days / 7.0);
+                        c.similarity * 0.6 + recency * 0.4
+                    };
+                    score(b)
+                        .partial_cmp(&score(a))
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                });
+                stored.truncate(1000);
             }
         }
     }
