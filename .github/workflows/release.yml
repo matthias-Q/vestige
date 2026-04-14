@@ -31,10 +31,15 @@ jobs:
             os: windows-latest
             archive: zip
             cargo_flags: ""
+          # Intel Mac: drops the old --no-default-features workaround. That
+          # flag was added to sidestep ort-sys lacking Intel Mac prebuilts,
+          # but fixing the feature propagation in vestige-mcp (embeddings
+          # now fully flows through fastembed) means the download-binaries
+          # feature reaches ort-sys the same way it does on aarch64.
           - target: x86_64-apple-darwin
             os: macos-14
             archive: tar.gz
-            cargo_flags: "--no-default-features"
+            cargo_flags: ""
           - target: aarch64-apple-darwin
             os: macos-latest
             archive: tar.gz

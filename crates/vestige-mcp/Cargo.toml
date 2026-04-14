@@ -34,8 +34,12 @@ path = "src/bin/cli.rs"
 # VESTIGE CORE - The cognitive science engine
 # ============================================================================
 # Includes: FSRS-6, spreading activation, synaptic tagging, hippocampal indexing,
-# memory states, context memory, importance signals, dreams, and more
-vestige-core = { version = "2.0.4", path = "../vestige-core", default-features = false, features = ["bundled-sqlite", "embeddings", "vector-search"] }
+# memory states, context memory, importance signals, dreams, and more.
+#
+# Only `bundled-sqlite` is always on. `embeddings` and `vector-search` are
+# toggled via vestige-mcp's own feature flags below so `--no-default-features`
+# actually works (previously hardcoded here, which silently defeated the flag).
+vestige-core = { version = "2.0.5", path = "../vestige-core", default-features = false, features = ["bundled-sqlite"] }
 
 # ============================================================================
 # MCP Server Dependencies
