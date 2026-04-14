@@ -1458,10 +1458,10 @@ impl Storage {
                     if !includes.iter().any(|t| t == &node.node_type) {
                         continue;
                     }
-                } else if let Some(excludes) = exclude_types {
-                    if excludes.iter().any(|t| t == &node.node_type) {
-                        continue;
-                    }
+                } else if let Some(excludes) = exclude_types
+                    && excludes.iter().any(|t| t == &node.node_type)
+                {
+                    continue;
                 }
                 let keyword_score = keyword_results
                     .iter()
