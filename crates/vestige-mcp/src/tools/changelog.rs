@@ -54,10 +54,7 @@ struct ChangelogArgs {
 }
 
 /// Execute memory_changelog tool
-pub async fn execute(
-    storage: &Arc<Storage>,
-    args: Option<Value>,
-) -> Result<Value, String> {
+pub async fn execute(storage: &Arc<Storage>, args: Option<Value>) -> Result<Value, String> {
     let args: ChangelogArgs = match args {
         Some(v) => serde_json::from_value(v).map_err(|e| format!("Invalid arguments: {}", e))?,
         None => ChangelogArgs {
@@ -80,11 +77,7 @@ pub async fn execute(
 }
 
 /// Per-memory changelog: state transition audit trail
-fn execute_per_memory(
-    storage: &Storage,
-    memory_id: &str,
-    limit: i32,
-) -> Result<Value, String> {
+fn execute_per_memory(storage: &Storage, memory_id: &str, limit: i32) -> Result<Value, String> {
     // Validate UUID format
     Uuid::parse_str(memory_id)
         .map_err(|_| format!("Invalid memory_id '{}'. Must be a valid UUID.", memory_id))?;
@@ -126,10 +119,7 @@ fn execute_per_memory(
 }
 
 /// System-wide changelog: consolidations + recent state transitions
-fn execute_system_wide(
-    storage: &Storage,
-    limit: i32,
-) -> Result<Value, String> {
+fn execute_system_wide(storage: &Storage, limit: i32) -> Result<Value, String> {
     // Get consolidation history
     let consolidations = storage
         .get_consolidation_history(limit)
@@ -141,9 +131,7 @@ fn execute_system_wide(
         .map_err(|e| e.to_string())?;
 
     // Get dream history (Bug #9 fix — dreams were invisible to audit trail)
-    let dreams = storage
-        .get_dream_history(limit)
-        .unwrap_or_default();
+    let dreams = storage.get_dream_history(limit).unwrap_or_default();
 
     // Build unified event list
     let mut events: Vec<(DateTime<Utc>, Value)> = Vec::new();
@@ -296,8 +284,7 @@ mod tests {
     #[tokio::test]
     async fn test_changelog_per_memory_nonexistent() {
         let (storage, _dir) = test_storage().await;
-        let args =
-            serde_json::json!({ "memory_id": "00000000-0000-0000-0000-000000000000" });
+        let args = serde_json::json!({ "memory_id": "00000000-0000-0000-0000-000000000000" });
         let result = execute(&storage, Some(args)).await;
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("not found"));

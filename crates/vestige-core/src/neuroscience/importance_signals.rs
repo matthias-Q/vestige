@@ -359,17 +359,18 @@ impl PredictionModel {
         let ngrams = self.extract_ngrams(content);
 
         if let Ok(mut patterns) = self.patterns.write()
-            && let Ok(mut total) = self.total_count.write() {
-                for ngram in ngrams {
-                    *patterns.entry(ngram).or_insert(0) += 1;
-                    *total += 1;
-                }
-
-                // Prune if too large
-                if patterns.len() > MAX_PREDICTION_PATTERNS {
-                    self.apply_decay(&mut patterns);
-                }
+            && let Ok(mut total) = self.total_count.write()
+        {
+            for ngram in ngrams {
+                *patterns.entry(ngram).or_insert(0) += 1;
+                *total += 1;
             }
+
+            // Prune if too large
+            if patterns.len() > MAX_PREDICTION_PATTERNS {
+                self.apply_decay(&mut patterns);
+            }
+        }
     }
 
     fn compute_prediction_error(&self, content: &str) -> f64 {
@@ -1186,7 +1187,11 @@ impl RewardSignal {
 
             // Limit pattern count
             if patterns.len() > 1000 {
-                patterns.sort_by(|a, b| b.strength.partial_cmp(&a.strength).unwrap_or(std::cmp::Ordering::Equal));
+                patterns.sort_by(|a, b| {
+                    b.strength
+                        .partial_cmp(&a.strength)
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                });
                 patterns.truncate(500);
             }
         }
@@ -1226,7 +1231,9 @@ impl RewardSignal {
 
         entries.sort_by(|a, b| {
             // Sort by score, then by recency
-            b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal).then_with(|| b.2.cmp(&a.2))
+            b.1.partial_cmp(&a.1)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| b.2.cmp(&a.2))
         });
 
         // Keep top entries

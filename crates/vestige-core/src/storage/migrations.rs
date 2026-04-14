@@ -49,6 +49,11 @@ pub const MIGRATIONS: &[Migration] = &[
         description: "v2.0.0 Cognitive Leap: emotional memory, flashbulb encoding, temporal hierarchy",
         up: MIGRATION_V9_UP,
     },
+    Migration {
+        version: 10,
+        description: "v2.0.5 Intentional Amnesia: active forgetting — top-down suppression (Anderson 2025 + Davis Rac1)",
+        up: MIGRATION_V10_UP,
+    },
 ];
 
 /// A database migration
@@ -315,7 +320,7 @@ const MIGRATION_V4_UP: &str = r#"
 -- TEMPORAL KNOWLEDGE GRAPH (Like Zep's Graphiti)
 -- ============================================================================
 
--- DEPRECATED (v2.1.0): knowledge_edges is unused. All graph edges use
+-- DEPRECATED (v2.0.5): knowledge_edges is unused. All graph edges use
 -- memory_connections (migration V3). This table was designed for bi-temporal
 -- edge support but was never wired. Retained for schema compatibility with
 -- existing databases. Do NOT add queries against this table.
@@ -606,6 +611,41 @@ ALTER TABLE dream_history ADD COLUMN emotional_memories_processed INTEGER DEFAUL
 ALTER TABLE dream_history ADD COLUMN creative_connections_found INTEGER DEFAULT 0;
 
 UPDATE schema_version SET version = 9, applied_at = datetime('now');
+"#;
+
+/// V10: v2.0.5 Intentional Amnesia — Top-Down Active Forgetting
+///
+/// Adds columns to `knowledge_nodes` for user-initiated suppression distinct
+/// from passive FSRS decay and from bottom-up retrieval-induced forgetting
+/// (which lives on `memory_states.suppression_until`). These columns are
+/// incremented by the `suppress` MCP tool (tool #24) and consumed by the
+/// search scoring stage + background Rac1 cascade worker.
+///
+/// References:
+/// - Anderson et al. (2025). Brain mechanisms underlying the inhibitory
+///   control of thought. Nat Rev Neurosci. DOI 10.1038/s41583-025-00929-y
+/// - Cervantes-Sandoval & Davis (2020). Rac1 Impairs Forgetting-Induced
+///   Cellular Plasticity. Front Cell Neurosci. PMC7477079
+const MIGRATION_V10_UP: &str = r#"
+-- Top-down suppression count (Suppression-Induced Forgetting, Anderson 2025).
+-- Compounds with each `suppress` call, saturates via the k × count formula
+-- in active_forgetting::retrieval_penalty().
+ALTER TABLE knowledge_nodes ADD COLUMN suppression_count INTEGER DEFAULT 0;
+
+-- Timestamp of the most recent suppression. Used for the 24h labile window
+-- (reversal is allowed only while (now - suppressed_at) < labile_hours).
+ALTER TABLE knowledge_nodes ADD COLUMN suppressed_at TEXT;
+
+-- Partial indices — only materialise rows actually involved in suppression.
+CREATE INDEX IF NOT EXISTS idx_nodes_suppression_count
+    ON knowledge_nodes(suppression_count)
+    WHERE suppression_count > 0;
+
+CREATE INDEX IF NOT EXISTS idx_nodes_suppressed_at
+    ON knowledge_nodes(suppressed_at)
+    WHERE suppressed_at IS NOT NULL;
+
+UPDATE schema_version SET version = 10, applied_at = datetime('now');
 "#;
 
 /// Get current schema version from database

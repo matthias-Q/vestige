@@ -34,11 +34,14 @@ pub mod restore;
 pub mod session_context;
 
 // v1.9: Autonomic tools
-pub mod health;
 pub mod graph;
+pub mod health;
 
 // v2.1: Cross-reference (connect the dots)
 pub mod cross_reference;
+
+// v2.0.5: Active Forgetting — Anderson 2025 + Davis Rac1
+pub mod suppress;
 
 // Deprecated/internal tools — not advertised in the public MCP tools/list,
 // but some functions are actively dispatched for backwards compatibility

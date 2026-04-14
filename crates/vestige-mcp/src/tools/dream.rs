@@ -4,8 +4,8 @@
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
-use chrono::Utc;
 use crate::cognitive::CognitiveEngine;
+use chrono::Utc;
 use vestige_core::{DreamHistoryRecord, InsightRecord, LinkType, Storage};
 
 pub fn schema() -> serde_json::Value {
@@ -34,21 +34,24 @@ pub async fn execute(
         .min(500) as usize; // Cap at 500 to prevent O(N^2) hang
 
     // v1.9.0: Waking SWR tagging — preferential replay of tagged memories (70/30 split)
-    let tagged_nodes = storage.get_waking_tagged_memories(memory_count as i32)
+    let tagged_nodes = storage
+        .get_waking_tagged_memories(memory_count as i32)
         .unwrap_or_default();
     let tagged_count = tagged_nodes.len();
 
     // Calculate how many tagged vs random to include
     let tagged_target = (memory_count * 7 / 10).min(tagged_count); // 70% tagged
-    let _random_target = memory_count.saturating_sub(tagged_target);  // 30% random (used for logging)
+    let _random_target = memory_count.saturating_sub(tagged_target); // 30% random (used for logging)
 
     // Build the dream memory set: tagged memories first, then fill with random
-    let tagged_ids: std::collections::HashSet<String> = tagged_nodes.iter()
+    let tagged_ids: std::collections::HashSet<String> = tagged_nodes
+        .iter()
         .take(tagged_target)
         .map(|n| n.id.clone())
         .collect();
 
-    let random_nodes = storage.get_all_nodes(memory_count as i32, 0)
+    let random_nodes = storage
+        .get_all_nodes(memory_count as i32, 0)
         .map_err(|e| format!("Failed to load memories: {}", e))?;
 
     let mut all_nodes: Vec<_> = tagged_nodes.into_iter().take(tagged_target).collect();
@@ -59,8 +62,10 @@ pub async fn execute(
     }
     // If still under capacity (e.g., all memories are tagged), fill from remaining tagged
     if all_nodes.len() < memory_count {
-        let used_ids: std::collections::HashSet<String> = all_nodes.iter().map(|n| n.id.clone()).collect();
-        let remaining_tagged = storage.get_waking_tagged_memories(memory_count as i32)
+        let used_ids: std::collections::HashSet<String> =
+            all_nodes.iter().map(|n| n.id.clone()).collect();
+        let remaining_tagged = storage
+            .get_waking_tagged_memories(memory_count as i32)
             .unwrap_or_default();
         for node in remaining_tagged {
             if !used_ids.contains(&node.id) && all_nodes.len() < memory_count {
@@ -77,16 +82,17 @@ pub async fn execute(
         }));
     }
 
-    let dream_memories: Vec<vestige_core::DreamMemory> = all_nodes.iter().map(|n| {
-        vestige_core::DreamMemory {
+    let dream_memories: Vec<vestige_core::DreamMemory> = all_nodes
+        .iter()
+        .map(|n| vestige_core::DreamMemory {
             id: n.id.clone(),
             content: n.content.clone(),
             embedding: storage.get_node_embedding(&n.id).ok().flatten(),
             tags: n.tags.clone(),
             created_at: n.created_at,
             access_count: n.reps as u32,
-        }
-    }).collect();
+        })
+        .collect();
 
     let cog = cognitive.lock().await;
     // Capture start time before the dream so we can identify newly discovered
@@ -259,17 +265,18 @@ mod tests {
 
     async fn ingest_n_memories(storage: &Arc<Storage>, n: usize) {
         for i in 0..n {
-            storage.ingest(vestige_core::IngestInput {
-                content: format!("Dream test memory number {}", i),
-                node_type: "fact".to_string(),
-                source: None,
-                sentiment_score: 0.0,
-                sentiment_magnitude: 0.0,
-                tags: vec!["dream-test".to_string()],
-                valid_from: None,
-                valid_until: None,
-            })
-            .unwrap();
+            storage
+                .ingest(vestige_core::IngestInput {
+                    content: format!("Dream test memory number {}", i),
+                    node_type: "fact".to_string(),
+                    source: None,
+                    sentiment_score: 0.0,
+                    sentiment_magnitude: 0.0,
+                    tags: vec!["dream-test".to_string()],
+                    valid_from: None,
+                    valid_until: None,
+                })
+                .unwrap();
         }
     }
 
@@ -368,7 +375,10 @@ mod tests {
         // After dream: dream history should exist
         {
             let last = storage.get_last_dream().unwrap();
-            assert!(last.is_some(), "Dream should have been persisted to database");
+            assert!(
+                last.is_some(),
+                "Dream should have been persisted to database"
+            );
         }
     }
 
@@ -379,20 +389,28 @@ mod tests {
 
         // Create enough diverse memories to trigger connection discovery
         for i in 0..15 {
-            storage.ingest(vestige_core::IngestInput {
-                content: format!(
-                    "Memory {} about topic {}: detailed content for connection discovery",
-                    i,
-                    if i % 3 == 0 { "rust" } else if i % 3 == 1 { "cargo" } else { "testing" }
-                ),
-                node_type: "fact".to_string(),
-                source: None,
-                sentiment_score: 0.0,
-                sentiment_magnitude: 0.0,
-                tags: vec!["dream-roundtrip".to_string()],
-                valid_from: None,
-                valid_until: None,
-            }).unwrap();
+            storage
+                .ingest(vestige_core::IngestInput {
+                    content: format!(
+                        "Memory {} about topic {}: detailed content for connection discovery",
+                        i,
+                        if i % 3 == 0 {
+                            "rust"
+                        } else if i % 3 == 1 {
+                            "cargo"
+                        } else {
+                            "testing"
+                        }
+                    ),
+                    node_type: "fact".to_string(),
+                    source: None,
+                    sentiment_score: 0.0,
+                    sentiment_magnitude: 0.0,
+                    tags: vec!["dream-roundtrip".to_string()],
+                    valid_from: None,
+                    valid_until: None,
+                })
+                .unwrap();
         }
 
         let cognitive = test_cognitive();
@@ -403,7 +421,10 @@ mod tests {
         if persisted > 0 {
             // Verify connections are queryable from storage
             let all_conns = storage.get_all_connections().unwrap();
-            assert!(!all_conns.is_empty(), "Persisted connections should be queryable");
+            assert!(
+                !all_conns.is_empty(),
+                "Persisted connections should be queryable"
+            );
 
             // Verify connection IDs reference valid memories
             let all_nodes = storage.get_all_nodes(100, 0).unwrap();
@@ -425,7 +446,9 @@ mod tests {
             // Verify live cognitive engine was hydrated
             let cog = cognitive.lock().await;
             let first_conn = &all_conns[0];
-            let assocs = cog.activation_network.get_associations(&first_conn.source_id);
+            let assocs = cog
+                .activation_network
+                .get_associations(&first_conn.source_id);
             assert!(
                 !assocs.is_empty(),
                 "Live cognitive engine should have been hydrated with dream connections"
@@ -441,16 +464,18 @@ mod tests {
         // Ingest memories and collect their IDs
         let mut ids = Vec::new();
         for i in 0..5 {
-            let result = storage.ingest(vestige_core::IngestInput {
-                content: format!("Save connection test memory {}", i),
-                node_type: "fact".to_string(),
-                source: None,
-                sentiment_score: 0.0,
-                sentiment_magnitude: 0.0,
-                tags: vec!["save-conn-test".to_string()],
-                valid_from: None,
-                valid_until: None,
-            }).unwrap();
+            let result = storage
+                .ingest(vestige_core::IngestInput {
+                    content: format!("Save connection test memory {}", i),
+                    node_type: "fact".to_string(),
+                    source: None,
+                    sentiment_score: 0.0,
+                    sentiment_magnitude: 0.0,
+                    tags: vec!["save-conn-test".to_string()],
+                    valid_from: None,
+                    valid_until: None,
+                })
+                .unwrap();
             ids.push(result.id);
         }
 
@@ -459,7 +484,7 @@ mod tests {
         let mut saved = 0u32;
         let mut errors = Vec::new();
         for i in 0..ids.len() {
-            for j in (i+1)..ids.len() {
+            for j in (i + 1)..ids.len() {
                 let record = vestige_core::ConnectionRecord {
                     source_id: ids[i].clone(),
                     target_id: ids[j].clone(),
@@ -471,10 +496,7 @@ mod tests {
                 };
                 match storage.save_connection(&record) {
                     Ok(_) => saved += 1,
-                    Err(e) => errors.push(format!(
-                        "{} -> {}: {}",
-                        ids[i], ids[j], e
-                    )),
+                    Err(e) => errors.push(format!("{} -> {}: {}", ids[i], ids[j], e)),
                 }
             }
         }
@@ -510,34 +532,62 @@ mod tests {
 
         // Ingest memories with known high-similarity content (shared tags + similar text)
         let topics = [
-            ("Rust borrow checker prevents data races at compile time", vec!["rust", "safety"]),
-            ("Rust ownership model ensures memory safety without GC", vec!["rust", "safety"]),
-            ("Cargo is the Rust package manager and build system", vec!["rust", "cargo"]),
-            ("Cargo.toml defines dependencies for Rust projects", vec!["rust", "cargo"]),
-            ("Unit tests in Rust use #[test] attribute", vec!["rust", "testing"]),
-            ("Integration tests in Rust live in the tests/ directory", vec!["rust", "testing"]),
-            ("Clippy is a Rust linter that catches common mistakes", vec!["rust", "tooling"]),
-            ("Rustfmt formats Rust code according to style guidelines", vec!["rust", "tooling"]),
+            (
+                "Rust borrow checker prevents data races at compile time",
+                vec!["rust", "safety"],
+            ),
+            (
+                "Rust ownership model ensures memory safety without GC",
+                vec!["rust", "safety"],
+            ),
+            (
+                "Cargo is the Rust package manager and build system",
+                vec!["rust", "cargo"],
+            ),
+            (
+                "Cargo.toml defines dependencies for Rust projects",
+                vec!["rust", "cargo"],
+            ),
+            (
+                "Unit tests in Rust use #[test] attribute",
+                vec!["rust", "testing"],
+            ),
+            (
+                "Integration tests in Rust live in the tests/ directory",
+                vec!["rust", "testing"],
+            ),
+            (
+                "Clippy is a Rust linter that catches common mistakes",
+                vec!["rust", "tooling"],
+            ),
+            (
+                "Rustfmt formats Rust code according to style guidelines",
+                vec!["rust", "tooling"],
+            ),
         ];
 
         for (content, tags) in &topics {
-            storage.ingest(vestige_core::IngestInput {
-                content: content.to_string(),
-                node_type: "fact".to_string(),
-                source: None,
-                sentiment_score: 0.0,
-                sentiment_magnitude: 0.0,
-                tags: tags.iter().map(|t| t.to_string()).collect(),
-                valid_from: None,
-                valid_until: None,
-            }).unwrap();
+            storage
+                .ingest(vestige_core::IngestInput {
+                    content: content.to_string(),
+                    node_type: "fact".to_string(),
+                    source: None,
+                    sentiment_score: 0.0,
+                    sentiment_magnitude: 0.0,
+                    tags: tags.iter().map(|t| t.to_string()).collect(),
+                    valid_from: None,
+                    valid_until: None,
+                })
+                .unwrap();
         }
 
         let cognitive = test_cognitive();
         let result = execute(&storage, &cognitive, None).await.unwrap();
         assert_eq!(result["status"], "dreamed");
 
-        let found = result["stats"]["new_connections_found"].as_u64().unwrap_or(0);
+        let found = result["stats"]["new_connections_found"]
+            .as_u64()
+            .unwrap_or(0);
         let persisted = result["connectionsPersisted"].as_u64().unwrap_or(0);
 
         // Dream should discover connections between these related memories
@@ -572,23 +622,52 @@ mod tests {
 
         // Create diverse tagged memories to encourage insight generation
         let topics = [
-            ("Rust borrow checker prevents data races", vec!["rust", "safety"]),
-            ("Rust ownership model ensures memory safety", vec!["rust", "safety"]),
-            ("Cargo manages Rust project dependencies", vec!["rust", "cargo"]),
-            ("Cargo.toml defines project configuration", vec!["rust", "cargo"]),
-            ("Unit tests use the #[test] attribute", vec!["rust", "testing"]),
-            ("Integration tests live in the tests directory", vec!["rust", "testing"]),
-            ("Clippy catches common Rust mistakes", vec!["rust", "tooling"]),
-            ("Rustfmt automatically formats code", vec!["rust", "tooling"]),
+            (
+                "Rust borrow checker prevents data races",
+                vec!["rust", "safety"],
+            ),
+            (
+                "Rust ownership model ensures memory safety",
+                vec!["rust", "safety"],
+            ),
+            (
+                "Cargo manages Rust project dependencies",
+                vec!["rust", "cargo"],
+            ),
+            (
+                "Cargo.toml defines project configuration",
+                vec!["rust", "cargo"],
+            ),
+            (
+                "Unit tests use the #[test] attribute",
+                vec!["rust", "testing"],
+            ),
+            (
+                "Integration tests live in the tests directory",
+                vec!["rust", "testing"],
+            ),
+            (
+                "Clippy catches common Rust mistakes",
+                vec!["rust", "tooling"],
+            ),
+            (
+                "Rustfmt automatically formats code",
+                vec!["rust", "tooling"],
+            ),
         ];
         for (content, tags) in &topics {
-            storage.ingest(vestige_core::IngestInput {
-                content: content.to_string(),
-                node_type: "fact".to_string(),
-                source: None, sentiment_score: 0.0, sentiment_magnitude: 0.0,
-                tags: tags.iter().map(|t| t.to_string()).collect(),
-                valid_from: None, valid_until: None,
-            }).unwrap();
+            storage
+                .ingest(vestige_core::IngestInput {
+                    content: content.to_string(),
+                    node_type: "fact".to_string(),
+                    source: None,
+                    sentiment_score: 0.0,
+                    sentiment_magnitude: 0.0,
+                    tags: tags.iter().map(|t| t.to_string()).collect(),
+                    valid_from: None,
+                    valid_until: None,
+                })
+                .unwrap();
         }
 
         let result = execute(&storage, &test_cognitive(), None).await.unwrap();
@@ -599,19 +678,30 @@ mod tests {
 
         // If insights were generated, they should be persisted
         if !response_insights.is_empty() {
-            assert!(persisted_count > 0, "Generated insights should be persisted to database");
+            assert!(
+                persisted_count > 0,
+                "Generated insights should be persisted to database"
+            );
             let stored = storage.get_insights(100).unwrap();
             assert_eq!(
-                stored.len(), persisted_count as usize,
-                "All {} persisted insights should be retrievable", persisted_count
+                stored.len(),
+                persisted_count as usize,
+                "All {} persisted insights should be retrievable",
+                persisted_count
             );
             // Verify insight fields
             for insight in &stored {
                 assert!(!insight.id.is_empty(), "Insight ID should not be empty");
-                assert!(!insight.insight.is_empty(), "Insight text should not be empty");
+                assert!(
+                    !insight.insight.is_empty(),
+                    "Insight text should not be empty"
+                );
                 assert!(insight.confidence >= 0.0 && insight.confidence <= 1.0);
                 assert!(insight.novelty_score >= 0.0);
-                assert!(insight.feedback.is_none(), "Fresh insight should have no feedback");
+                assert!(
+                    insight.feedback.is_none(),
+                    "Fresh insight should have no feedback"
+                );
                 assert_eq!(insight.applied_count, 0);
             }
         }

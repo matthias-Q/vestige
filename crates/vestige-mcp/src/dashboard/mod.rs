@@ -11,8 +11,8 @@ pub mod state;
 pub mod static_files;
 pub mod websocket;
 
-use axum::routing::{delete, get, post};
 use axum::Router;
+use axum::routing::{delete, get, post};
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -47,7 +47,6 @@ pub fn build_router_with_event_tx(
 }
 
 fn build_router_inner(state: AppState, port: u16) -> (Router, AppState) {
-
     #[allow(unused_mut)]
     let mut origins = vec![
         format!("http://127.0.0.1:{}", port)
@@ -61,8 +60,16 @@ fn build_router_inner(state: AppState, port: u16) -> (Router, AppState) {
     // SvelteKit dev server — only in debug builds
     #[cfg(debug_assertions)]
     {
-        origins.push("http://localhost:5173".parse::<axum::http::HeaderValue>().expect("valid origin"));
-        origins.push("http://127.0.0.1:5173".parse::<axum::http::HeaderValue>().expect("valid origin"));
+        origins.push(
+            "http://localhost:5173"
+                .parse::<axum::http::HeaderValue>()
+                .expect("valid origin"),
+        );
+        origins.push(
+            "http://127.0.0.1:5173"
+                .parse::<axum::http::HeaderValue>()
+                .expect("valid origin"),
+        );
     }
 
     let cors = CorsLayer::new()
@@ -116,7 +123,10 @@ fn build_router_inner(state: AppState, port: u16) -> (Router, AppState) {
     let router = Router::new()
         // SvelteKit Dashboard v2.0 (embedded static build)
         .route("/dashboard", get(static_files::serve_dashboard_spa))
-        .route("/dashboard/{*path}", get(static_files::serve_dashboard_asset))
+        .route(
+            "/dashboard/{*path}",
+            get(static_files::serve_dashboard_asset),
+        )
         // Legacy embedded HTML (keep for backward compat)
         .route("/", get(handlers::serve_dashboard))
         .route("/graph", get(handlers::serve_graph))
@@ -143,7 +153,10 @@ fn build_router_inner(state: AppState, port: u16) -> (Router, AppState) {
         .route("/api/predict", post(handlers::predict_memories))
         .route("/api/importance", post(handlers::score_importance))
         .route("/api/consolidate", post(handlers::trigger_consolidation))
-        .route("/api/retention-distribution", get(handlers::retention_distribution))
+        .route(
+            "/api/retention-distribution",
+            get(handlers::retention_distribution),
+        )
         // Intentions (v2.0)
         .route("/api/intentions", get(handlers::list_intentions))
         .layer(

@@ -35,15 +35,10 @@ pub async fn read(storage: &Arc<Storage>, uri: &str) -> Result<String, String> {
 fn parse_query_param(query: Option<&str>, key: &str, default: i32) -> i32 {
     query
         .and_then(|q| {
-            q.split('&')
-                .find_map(|pair| {
-                    let (k, v) = pair.split_once('=')?;
-                    if k == key {
-                        v.parse().ok()
-                    } else {
-                        None
-                    }
-                })
+            q.split('&').find_map(|pair| {
+                let (k, v) = pair.split_once('=')?;
+                if k == key { v.parse().ok() } else { None }
+            })
         })
         .unwrap_or(default)
         .clamp(1, 100)
@@ -228,7 +223,10 @@ async fn read_intentions(storage: &Arc<Storage>) -> Result<String, String> {
         })
         .collect();
 
-    let overdue_count = items.iter().filter(|i| i["isOverdue"].as_bool().unwrap_or(false)).count();
+    let overdue_count = items
+        .iter()
+        .filter(|i| i["isOverdue"].as_bool().unwrap_or(false))
+        .count();
 
     let result = serde_json::json!({
         "total": intentions.len(),
@@ -241,7 +239,9 @@ async fn read_intentions(storage: &Arc<Storage>) -> Result<String, String> {
 }
 
 async fn read_triggered_intentions(storage: &Arc<Storage>) -> Result<String, String> {
-    let overdue = storage.get_overdue_intentions().map_err(|e| e.to_string())?;
+    let overdue = storage
+        .get_overdue_intentions()
+        .map_err(|e| e.to_string())?;
     let now = chrono::Utc::now();
 
     let items: Vec<serde_json::Value> = overdue
@@ -289,7 +289,10 @@ async fn read_insights(storage: &Arc<Storage>) -> Result<String, String> {
     let insights = storage.get_insights(50).map_err(|e| e.to_string())?;
 
     let pending: Vec<_> = insights.iter().filter(|i| i.feedback.is_none()).collect();
-    let accepted: Vec<_> = insights.iter().filter(|i| i.feedback.as_deref() == Some("accepted")).collect();
+    let accepted: Vec<_> = insights
+        .iter()
+        .filter(|i| i.feedback.as_deref() == Some("accepted"))
+        .collect();
 
     let items: Vec<serde_json::Value> = insights
         .iter()
@@ -319,8 +322,12 @@ async fn read_insights(storage: &Arc<Storage>) -> Result<String, String> {
 }
 
 async fn read_consolidation_log(storage: &Arc<Storage>) -> Result<String, String> {
-    let history = storage.get_consolidation_history(20).map_err(|e| e.to_string())?;
-    let last_run = storage.get_last_consolidation().map_err(|e| e.to_string())?;
+    let history = storage
+        .get_consolidation_history(20)
+        .map_err(|e| e.to_string())?;
+    let last_run = storage
+        .get_last_consolidation()
+        .map_err(|e| e.to_string())?;
 
     let items: Vec<serde_json::Value> = history
         .iter()

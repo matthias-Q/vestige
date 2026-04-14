@@ -22,7 +22,7 @@ use tokio::sync::Mutex;
 
 use crate::cognitive::CognitiveEngine;
 use vestige_core::{
-    ContentType, ImportanceContext, ImportanceEventType, ImportanceEvent, IngestInput, Storage,
+    ContentType, ImportanceContext, ImportanceEvent, ImportanceEventType, IngestInput, Storage,
 };
 
 /// Input schema for smart_ingest tool
@@ -136,7 +136,9 @@ pub async fn execute(
     }
 
     // Single mode: content is required
-    let content = args.content.ok_or("Missing 'content' field. Provide 'content' for single mode or 'items' for batch mode.")?;
+    let content = args.content.ok_or(
+        "Missing 'content' field. Provide 'content' for single mode or 'items' for batch mode.",
+    )?;
 
     // Validate content
     if content.trim().is_empty() {
@@ -156,7 +158,9 @@ pub async fn execute(
     if let Ok(cog) = cognitive.try_lock() {
         // 4A. Full 4-channel importance scoring
         let context = ImportanceContext::current();
-        let importance = cog.importance_signals.compute_importance(&content, &context);
+        let importance = cog
+            .importance_signals
+            .compute_importance(&content, &context);
         importance_composite = importance.composite;
 
         // 4B. Intent detection → auto-tag
@@ -201,7 +205,13 @@ pub async fn execute(
         let has_embedding = node.has_embedding.unwrap_or(false);
 
         // Post-ingest cognitive side effects
-        run_post_ingest(cognitive, &node_id, &node_content, &node_type, importance_composite);
+        run_post_ingest(
+            cognitive,
+            &node_id,
+            &node_content,
+            &node_type,
+            importance_composite,
+        );
 
         return Ok(serde_json::json!({
             "success": true,
@@ -225,7 +235,13 @@ pub async fn execute(
         let has_embedding = result.node.has_embedding.unwrap_or(false);
 
         // Post-ingest cognitive side effects
-        run_post_ingest(cognitive, &node_id, &node_content, &node_type, importance_composite);
+        run_post_ingest(
+            cognitive,
+            &node_id,
+            &node_content,
+            &node_type,
+            importance_composite,
+        );
 
         Ok(serde_json::json!({
             "success": true,
@@ -258,7 +274,13 @@ pub async fn execute(
         let node_content = node.content.clone();
         let node_type = node.node_type.clone();
 
-        run_post_ingest(cognitive, &node_id, &node_content, &node_type, importance_composite);
+        run_post_ingest(
+            cognitive,
+            &node_id,
+            &node_content,
+            &node_type,
+            importance_composite,
+        );
 
         Ok(serde_json::json!({
             "success": true,
@@ -331,7 +353,9 @@ async fn execute_batch(
 
         if let Ok(cog) = cognitive.try_lock() {
             let context = ImportanceContext::current();
-            let importance = cog.importance_signals.compute_importance(&item.content, &context);
+            let importance = cog
+                .importance_signals
+                .compute_importance(&item.content, &context);
             importance_composite = importance.composite;
 
             let intent_result = cog.intent_detector.detect_intent();
@@ -373,7 +397,13 @@ async fn execute_batch(
                     let node_type = node.node_type.clone();
 
                     created += 1;
-                    run_post_ingest(cognitive, &node_id, &node_content, &node_type, importance_composite);
+                    run_post_ingest(
+                        cognitive,
+                        &node_id,
+                        &node_content,
+                        &node_type,
+                        importance_composite,
+                    );
 
                     results.push(serde_json::json!({
                         "index": i,
@@ -411,7 +441,13 @@ async fn execute_batch(
                     }
 
                     // Post-ingest cognitive side effects
-                    run_post_ingest(cognitive, &node_id, &node_content, &node_type, importance_composite);
+                    run_post_ingest(
+                        cognitive,
+                        &node_id,
+                        &node_content,
+                        &node_type,
+                        importance_composite,
+                    );
 
                     results.push(serde_json::json!({
                         "index": i,
@@ -443,7 +479,13 @@ async fn execute_batch(
                     let node_type = node.node_type.clone();
 
                     created += 1;
-                    run_post_ingest(cognitive, &node_id, &node_content, &node_type, importance_composite);
+                    run_post_ingest(
+                        cognitive,
+                        &node_id,
+                        &node_content,
+                        &node_type,
+                        importance_composite,
+                    );
 
                     results.push(serde_json::json!({
                         "index": i,
@@ -514,7 +556,8 @@ fn run_post_ingest(
         );
 
         // 4G. Cross-project pattern recording
-        cog.cross_project.record_project_memory(node_id, "default", None);
+        cog.cross_project
+            .record_project_memory(node_id, "default", None);
     }
 }
 
@@ -576,8 +619,13 @@ mod tests {
         let value = result.unwrap();
         assert_eq!(value["success"], true);
         assert_eq!(value["decision"], "create");
-        assert!(value["reason"].as_str().unwrap().contains("Forced") ||
-                value["reason"].as_str().unwrap().contains("Embeddings not available"));
+        assert!(
+            value["reason"].as_str().unwrap().contains("Forced")
+                || value["reason"]
+                    .as_str()
+                    .unwrap()
+                    .contains("Embeddings not available")
+        );
     }
 
     #[test]
@@ -729,7 +777,12 @@ mod tests {
     #[tokio::test]
     async fn test_batch_empty_items_fails() {
         let (storage, _dir) = test_storage().await;
-        let result = execute(&storage, &test_cognitive(), Some(serde_json::json!({ "items": [] }))).await;
+        let result = execute(
+            &storage,
+            &test_cognitive(),
+            Some(serde_json::json!({ "items": [] })),
+        )
+        .await;
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("empty"));
     }
@@ -738,14 +791,16 @@ mod tests {
     async fn test_batch_ingest() {
         let (storage, _dir) = test_storage().await;
         let result = execute(
-            &storage, &test_cognitive(),
+            &storage,
+            &test_cognitive(),
             Some(serde_json::json!({
                 "items": [
                     { "content": "First batch item", "tags": ["test"] },
                     { "content": "Second batch item", "tags": ["test"] }
                 ]
             })),
-        ).await;
+        )
+        .await;
         assert!(result.is_ok());
         let value = result.unwrap();
         assert_eq!(value["mode"], "batch");
@@ -756,7 +811,8 @@ mod tests {
     async fn test_batch_skips_empty_content() {
         let (storage, _dir) = test_storage().await;
         let result = execute(
-            &storage, &test_cognitive(),
+            &storage,
+            &test_cognitive(),
             Some(serde_json::json!({
                 "items": [
                     { "content": "Valid item" },
@@ -764,7 +820,8 @@ mod tests {
                     { "content": "Another valid item" }
                 ]
             })),
-        ).await;
+        )
+        .await;
         assert!(result.is_ok());
         let value = result.unwrap();
         assert_eq!(value["summary"]["skipped"], 1);
@@ -784,7 +841,12 @@ mod tests {
         let items: Vec<serde_json::Value> = (0..21)
             .map(|i| serde_json::json!({ "content": format!("Item {}", i) }))
             .collect();
-        let result = execute(&storage, &test_cognitive(), Some(serde_json::json!({ "items": items }))).await;
+        let result = execute(
+            &storage,
+            &test_cognitive(),
+            Some(serde_json::json!({ "items": items })),
+        )
+        .await;
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("Maximum 20 items"));
     }
@@ -795,7 +857,12 @@ mod tests {
         let items: Vec<serde_json::Value> = (0..20)
             .map(|i| serde_json::json!({ "content": format!("Item {}", i) }))
             .collect();
-        let result = execute(&storage, &test_cognitive(), Some(serde_json::json!({ "items": items }))).await;
+        let result = execute(
+            &storage,
+            &test_cognitive(),
+            Some(serde_json::json!({ "items": items })),
+        )
+        .await;
         assert!(result.is_ok());
         let value = result.unwrap();
         assert_eq!(value["summary"]["total"], 20);
@@ -805,14 +872,16 @@ mod tests {
     async fn test_batch_skips_whitespace_only_content() {
         let (storage, _dir) = test_storage().await;
         let result = execute(
-            &storage, &test_cognitive(),
+            &storage,
+            &test_cognitive(),
             Some(serde_json::json!({
                 "items": [
                     { "content": "   \t\n  " },
                     { "content": "Valid content" }
                 ]
             })),
-        ).await;
+        )
+        .await;
         assert!(result.is_ok());
         let value = result.unwrap();
         assert_eq!(value["summary"]["skipped"], 1);
@@ -823,11 +892,13 @@ mod tests {
     async fn test_batch_single_item_succeeds() {
         let (storage, _dir) = test_storage().await;
         let result = execute(
-            &storage, &test_cognitive(),
+            &storage,
+            &test_cognitive(),
             Some(serde_json::json!({
                 "items": [{ "content": "Single item" }]
             })),
-        ).await;
+        )
+        .await;
         assert!(result.is_ok());
         let value = result.unwrap();
         assert_eq!(value["summary"]["total"], 1);
@@ -838,7 +909,8 @@ mod tests {
     async fn test_batch_items_with_all_fields() {
         let (storage, _dir) = test_storage().await;
         let result = execute(
-            &storage, &test_cognitive(),
+            &storage,
+            &test_cognitive(),
             Some(serde_json::json!({
                 "items": [{
                     "content": "Full fields item",
@@ -847,7 +919,8 @@ mod tests {
                     "source": "test-suite"
                 }]
             })),
-        ).await;
+        )
+        .await;
         assert!(result.is_ok());
         let value = result.unwrap();
         assert_eq!(value["summary"]["created"], 1);
@@ -857,7 +930,8 @@ mod tests {
     async fn test_batch_results_array_matches_items() {
         let (storage, _dir) = test_storage().await;
         let result = execute(
-            &storage, &test_cognitive(),
+            &storage,
+            &test_cognitive(),
             Some(serde_json::json!({
                 "items": [
                     { "content": "First" },
@@ -865,7 +939,8 @@ mod tests {
                     { "content": "Third" }
                 ]
             })),
-        ).await;
+        )
+        .await;
         let value = result.unwrap();
         let results = value["results"].as_array().unwrap();
         assert_eq!(results.len(), 3);
@@ -879,14 +954,16 @@ mod tests {
     async fn test_batch_success_true_when_only_skipped() {
         let (storage, _dir) = test_storage().await;
         let result = execute(
-            &storage, &test_cognitive(),
+            &storage,
+            &test_cognitive(),
             Some(serde_json::json!({
                 "items": [
                     { "content": "" },
                     { "content": "   " }
                 ]
             })),
-        ).await;
+        )
+        .await;
         let value = result.unwrap();
         assert_eq!(value["success"], true); // skipped ≠ errors
         assert_eq!(value["summary"]["errors"], 0);
@@ -897,11 +974,13 @@ mod tests {
     async fn test_batch_has_importance_scores() {
         let (storage, _dir) = test_storage().await;
         let result = execute(
-            &storage, &test_cognitive(),
+            &storage,
+            &test_cognitive(),
             Some(serde_json::json!({
                 "items": [{ "content": "Important batch memory content" }]
             })),
-        ).await;
+        )
+        .await;
         let value = result.unwrap();
         let results = value["results"].as_array().unwrap();
         assert!(results[0]["importanceScore"].is_number());
@@ -912,7 +991,8 @@ mod tests {
         let (storage, _dir) = test_storage().await;
         // Three items with very similar content + global forceCreate
         let result = execute(
-            &storage, &test_cognitive(),
+            &storage,
+            &test_cognitive(),
             Some(serde_json::json!({
                 "forceCreate": true,
                 "items": [
@@ -921,7 +1001,8 @@ mod tests {
                     { "content": "Physics question about quantum mechanics and wave behavior" }
                 ]
             })),
-        ).await;
+        )
+        .await;
         assert!(result.is_ok());
         let value = result.unwrap();
         assert_eq!(value["mode"], "batch");
@@ -941,7 +1022,8 @@ mod tests {
         let (storage, _dir) = test_storage().await;
         // Mix of forced and non-forced items
         let result = execute(
-            &storage, &test_cognitive(),
+            &storage,
+            &test_cognitive(),
             Some(serde_json::json!({
                 "items": [
                     { "content": "Forced item one", "forceCreate": true },
@@ -949,7 +1031,8 @@ mod tests {
                     { "content": "Forced item three", "forceCreate": true }
                 ]
             })),
-        ).await;
+        )
+        .await;
         assert!(result.is_ok());
         let value = result.unwrap();
         let results = value["results"].as_array().unwrap();

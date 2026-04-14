@@ -36,11 +36,15 @@ export class EdgeManager {
 
 			const points = [sourcePos, targetPos];
 			const geometry = new THREE.BufferGeometry().setFromPoints(points);
+			// Brand violet (#8b5cf6) instead of the old dark navy 0x4a4a7a
+			// which was invisible against the fog. Higher opacity base so
+			// edges actually read as a graph.
 			const material = new THREE.LineBasicMaterial({
-				color: 0x4a4a7a,
+				color: 0x8b5cf6,
 				transparent: true,
-				opacity: Math.min(0.1 + edge.weight * 0.5, 0.6),
+				opacity: Math.min(0.25 + edge.weight * 0.5, 0.8),
 				blending: THREE.AdditiveBlending,
+				depthWrite: false,
 			});
 
 			const line = new THREE.Line(geometry, material);
@@ -58,10 +62,11 @@ export class EdgeManager {
 		const points = [sourcePos.clone(), sourcePos.clone()];
 		const geometry = new THREE.BufferGeometry().setFromPoints(points);
 		const material = new THREE.LineBasicMaterial({
-			color: 0x4a4a7a,
+			color: 0x8b5cf6,
 			transparent: true,
 			opacity: 0,
 			blending: THREE.AdditiveBlending,
+			depthWrite: false,
 		});
 
 		const line = new THREE.Line(geometry, material);
@@ -111,11 +116,11 @@ export class EdgeManager {
 			attrs.needsUpdate = true;
 
 			const mat = g.line.material as THREE.LineBasicMaterial;
-			mat.opacity = progress * 0.5;
+			mat.opacity = progress * 0.65;
 
 			if (g.frame >= g.totalFrames) {
-				// Final opacity from weight
-				mat.opacity = 0.5;
+				// Final opacity matches new createEdges baseline
+				mat.opacity = 0.65;
 				this.growingEdges.splice(i, 1);
 			}
 		}
@@ -126,7 +131,7 @@ export class EdgeManager {
 			d.frame++;
 			const progress = d.frame / d.totalFrames;
 			const mat = d.line.material as THREE.LineBasicMaterial;
-			mat.opacity = Math.max(0, 0.5 * (1 - progress));
+			mat.opacity = Math.max(0, 0.65 * (1 - progress));
 
 			if (d.frame >= d.totalFrames) {
 				this.group.remove(d.line);

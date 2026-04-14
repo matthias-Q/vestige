@@ -29,7 +29,10 @@ pub mod speculative;
 
 // Re-exports for convenient access
 pub use adaptive_embedding::{AdaptiveEmbedder, ContentType, EmbeddingStrategy, Language};
-pub use chains::{ChainStep, Connection, ConnectionType, MemoryChainBuilder, MemoryNode, MemoryPath, ReasoningChain};
+pub use chains::{
+    ChainStep, Connection, ConnectionType, MemoryChainBuilder, MemoryNode, MemoryPath,
+    ReasoningChain,
+};
 pub use compression::{CompressedMemory, CompressionConfig, CompressionStats, MemoryCompressor};
 pub use cross_project::{
     ApplicableKnowledge, CrossProjectLearner, ProjectContext, UniversalPattern,
@@ -58,14 +61,14 @@ pub use dreams::{
 };
 pub use importance::{ImportanceDecayConfig, ImportanceScore, ImportanceTracker, UsageEvent};
 pub use intent::{ActionType, DetectedIntent, IntentDetector, MaintenanceType, UserAction};
-pub use reconsolidation::{
-    AccessContext, AccessTrigger, AppliedModification, ChangeSummary, LabileState, MemorySnapshot,
-    Modification, ReconsolidatedMemory, ReconsolidationManager, ReconsolidationStats,
-    RelationshipType, RetrievalRecord,
-};
 pub use prediction_error::{
     CandidateMemory, CreateReason, EvaluationIntent, GateDecision, GateStats, MergeStrategy,
     PredictionErrorConfig, PredictionErrorGate, SimilarityResult, SupersedeReason, UpdateType,
     cosine_similarity,
+};
+pub use reconsolidation::{
+    AccessContext, AccessTrigger, AppliedModification, ChangeSummary, LabileState, MemorySnapshot,
+    Modification, ReconsolidatedMemory, ReconsolidationManager, ReconsolidationStats,
+    RelationshipType, RetrievalRecord,
 };
 pub use speculative::{PredictedMemory, PredictionContext, SpeculativeRetriever, UsagePattern};

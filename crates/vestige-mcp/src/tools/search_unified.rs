@@ -191,15 +191,16 @@ pub async fn execute(
         .hybrid_search_filtered(
             &args.query,
             keyword_first_limit,
-            1.0,  // keyword_weight = 1.0 (keyword-only)
-            0.0,  // semantic_weight = 0.0
+            1.0, // keyword_weight = 1.0 (keyword-only)
+            0.0, // semantic_weight = 0.0
             args.include_types.as_deref(),
             args.exclude_types.as_deref(),
         )
         .map_err(|e| e.to_string())?;
 
     // Collect keyword-priority results (keyword_score >= threshold)
-    let mut keyword_priority_ids: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut keyword_priority_ids: std::collections::HashSet<String> =
+        std::collections::HashSet::new();
     let mut keyword_priority_results: Vec<vestige_core::SearchResult> = Vec::new();
     for r in keyword_first_results {
         if r.keyword_score.unwrap_or(0.0) >= keyword_priority_threshold
@@ -214,7 +215,7 @@ pub async fn execute(
     // STAGE 1: Hybrid search with Nx over-fetch for reranking pool
     // ====================================================================
     let overfetch_multiplier = match retrieval_mode {
-        "precise" => 1,   // No overfetch — return exactly what's asked
+        "precise" => 1,    // No overfetch — return exactly what's asked
         "exhaustive" => 5, // Deep overfetch for maximum recall
         _ => 3,            // Balanced default
     };
@@ -251,7 +252,10 @@ pub async fn execute(
     // Dedup: merge Stage 0 keyword-priority results into Stage 1 results
     // ====================================================================
     for kp in &keyword_priority_results {
-        if let Some(existing) = filtered_results.iter_mut().find(|r| r.node.id == kp.node.id) {
+        if let Some(existing) = filtered_results
+            .iter_mut()
+            .find(|r| r.node.id == kp.node.id)
+        {
             // Preserve keyword_score from Stage 0 (keyword-only search is authoritative)
             if kp.keyword_score.unwrap_or(0.0) > existing.keyword_score.unwrap_or(0.0) {
                 existing.keyword_score = kp.keyword_score;
@@ -305,7 +309,10 @@ pub async fn execute(
         let reranked_results: Vec<vestige_core::SearchResult> = if rerank_candidates.is_empty() {
             Vec::new()
         } else if let Ok(mut cog) = cognitive.try_lock() {
-            if let Ok(reranked) = cog.reranker.rerank(&args.query, rerank_candidates, Some(limit_usize)) {
+            if let Ok(reranked) =
+                cog.reranker
+                    .rerank(&args.query, rerank_candidates, Some(limit_usize))
+            {
                 reranked.into_iter().map(|rr| rr.item).collect()
             } else {
                 // Reranker failed — fall back to original order for non-bypass candidates
@@ -343,8 +350,8 @@ pub async fn execute(
             );
             // Blend: 85% relevance + 15% temporal signal
             let temporal_factor = recency * validity;
-            result.combined_score =
-                result.combined_score * 0.85 + (result.combined_score * temporal_factor as f32) * 0.15;
+            result.combined_score = result.combined_score * 0.85
+                + (result.combined_score * temporal_factor as f32) * 0.15;
         }
     }
 
@@ -368,9 +375,21 @@ pub async fn execute(
                 MemoryState::Unavailable
             };
 
-            let adjusted = cog
+            let mut adjusted = cog
                 .accessibility_calc
                 .calculate(&lifecycle, result.combined_score as f64);
+
+            // v2.0.5: Active forgetting penalty (Anderson 2025 SIF).
+            // Each prior suppress call compounds a retrieval-score penalty,
+            // saturating at 80%. Applied AFTER accessibility so the penalty
+            // stacks on top of any passive FSRS decay.
+            if result.node.suppression_count > 0 {
+                let sys =
+                    vestige_core::neuroscience::active_forgetting::ActiveForgettingSystem::new();
+                let penalty = sys.retrieval_penalty(result.node.suppression_count);
+                adjusted *= 1.0 - penalty;
+            }
+
             result.combined_score = adjusted as f32;
         }
     }
@@ -381,14 +400,16 @@ pub async fn execute(
     if let Some(ref topics) = args.context_topics
         && !topics.is_empty()
     {
-        let retrieval_ctx = EncodingContext::new()
-            .with_topical(TopicalContext::with_topics(topics.clone()));
+        let retrieval_ctx =
+            EncodingContext::new().with_topical(TopicalContext::with_topics(topics.clone()));
         if let Ok(cog) = cognitive.try_lock() {
             for result in &mut filtered_results {
                 // Build encoding context from memory's tags
                 let encoding_ctx = EncodingContext::new()
                     .with_topical(TopicalContext::with_topics(result.node.tags.clone()));
-                let context_score = cog.context_matcher.match_contexts(&encoding_ctx, &retrieval_ctx);
+                let context_score = cog
+                    .context_matcher
+                    .match_contexts(&encoding_ctx, &retrieval_ctx);
                 // Blend: context match boosts relevance up to +30%
                 result.combined_score *= 1.0 + (context_score as f32 * 0.3);
             }
@@ -403,7 +424,9 @@ pub async fn execute(
             } else {
                 EncodingContext::new()
             };
-            let reinstatement = cog.context_matcher.reinstate_context(&first.node.id, &current_ctx);
+            let reinstatement = cog
+                .context_matcher
+                .reinstate_context(&first.node.id, &current_ctx);
             Some(serde_json::json!({
                 "memoryId": reinstatement.memory_id,
                 "temporalHint": reinstatement.temporal_hint,
@@ -438,7 +461,10 @@ pub async fn execute(
         if let Some(result) = cog.competition_mgr.run_competition(&candidates, 0.7) {
             // Apply suppression: losers get penalized
             for suppressed_id in &result.suppressed_ids {
-                if let Some(r) = filtered_results.iter_mut().find(|r| &r.node.id == suppressed_id) {
+                if let Some(r) = filtered_results
+                    .iter_mut()
+                    .find(|r| &r.node.id == suppressed_id)
+                {
                     r.combined_score *= 0.85; // 15% suppression penalty
                     suppressed_count += 1;
                 }
@@ -503,7 +529,10 @@ pub async fn execute(
     // ====================================================================
     // Auto-strengthen on access (Testing Effect)
     // ====================================================================
-    let ids: Vec<&str> = filtered_results.iter().map(|r| r.node.id.as_str()).collect();
+    let ids: Vec<&str> = filtered_results
+        .iter()
+        .map(|r| r.node.id.as_str())
+        .collect();
     let _ = storage.strengthen_batch_on_access(&ids);
 
     // Drop storage lock before acquiring cognitive for side effects
@@ -525,9 +554,9 @@ pub async fn execute(
 
             cog.speculative_retriever.record_access(
                 &result.node.id,
-                None,                           // file_context
-                Some(args.query.as_str()),       // query_context
-                None,                            // was_helpful (unknown yet)
+                None,                      // file_context
+                Some(args.query.as_str()), // query_context
+                None,                      // was_helpful (unknown yet)
             );
 
             // 7C. Mark labile for reconsolidation window (5 min)
@@ -580,7 +609,11 @@ pub async fn execute(
     }
 
     // Check learning mode via attention signal
-    let learning_mode = cognitive.try_lock().ok().map(|cog| cog.attention_signal.is_learning_mode()).unwrap_or(false);
+    let learning_mode = cognitive
+        .try_lock()
+        .ok()
+        .map(|cog| cog.attention_signal.is_learning_mode())
+        .unwrap_or(false);
 
     let mut response = serde_json::json!({
         "query": args.query,
@@ -593,7 +626,9 @@ pub async fn execute(
 
     // Helpful hint when no results found
     if formatted.is_empty() {
-        response["hint"] = serde_json::json!("No memories found. Use smart_ingest to add memories, or try a broader query.");
+        response["hint"] = serde_json::json!(
+            "No memories found. Use smart_ingest to add memories, or try a broader query."
+        );
     }
 
     // Include associations if any were found
@@ -1038,10 +1073,12 @@ mod tests {
         let schema_value = schema();
         assert_eq!(schema_value["type"], "object");
         assert!(schema_value["properties"]["query"].is_object());
-        assert!(schema_value["required"]
-            .as_array()
-            .unwrap()
-            .contains(&serde_json::json!("query")));
+        assert!(
+            schema_value["required"]
+                .as_array()
+                .unwrap()
+                .contains(&serde_json::json!("query"))
+        );
     }
 
     #[test]
@@ -1172,8 +1209,14 @@ mod tests {
             // Summary should have content AND timestamps (v2.1: dates always visible)
             assert!(first["content"].is_string());
             assert!(first["id"].is_string());
-            assert!(first["createdAt"].is_string(), "summary must include createdAt");
-            assert!(first["updatedAt"].is_string(), "summary must include updatedAt");
+            assert!(
+                first["createdAt"].is_string(),
+                "summary must include createdAt"
+            );
+            assert!(
+                first["updatedAt"].is_string(),
+                "summary must include updatedAt"
+            );
         }
     }
 
@@ -1199,7 +1242,10 @@ mod tests {
         for i in 0..10 {
             ingest_test_content(
                 &storage,
-                &format!("Budget test content number {} with some extra text to increase size.", i),
+                &format!(
+                    "Budget test content number {} with some extra text to increase size.",
+                    i
+                ),
             )
             .await;
         }

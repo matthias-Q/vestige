@@ -7,8 +7,8 @@ use serde_json::Value;
 use std::sync::Arc;
 
 use vestige_core::{
-    CaptureWindow, ImportanceEvent, ImportanceEventType,
-    SynapticTaggingConfig, SynapticTaggingSystem, Storage,
+    CaptureWindow, ImportanceEvent, ImportanceEventType, Storage, SynapticTaggingConfig,
+    SynapticTaggingSystem,
 };
 
 /// Input schema for trigger_importance tool
@@ -69,27 +69,22 @@ pub fn stats_schema() -> Value {
 }
 
 /// Trigger an importance event to retroactively strengthen recent memories
-pub async fn execute_trigger(
-    storage: &Arc<Storage>,
-    args: Option<Value>,
-) -> Result<Value, String> {
+pub async fn execute_trigger(storage: &Arc<Storage>, args: Option<Value>) -> Result<Value, String> {
     let args = args.ok_or("Missing arguments")?;
 
     let event_type_str = args["event_type"]
         .as_str()
         .ok_or("event_type is required")?;
 
-    let memory_id = args["memory_id"]
-        .as_str()
-        .ok_or("memory_id is required")?;
+    let memory_id = args["memory_id"].as_str().ok_or("memory_id is required")?;
 
     let description = args["description"].as_str();
     let hours_back = args["hours_back"].as_f64().unwrap_or(9.0);
     let hours_forward = args["hours_forward"].as_f64().unwrap_or(2.0);
 
-
     // Verify the trigger memory exists
-    let trigger_memory = storage.get_node(memory_id)
+    let trigger_memory = storage
+        .get_node(memory_id)
         .map_err(|e| format!("Error: {}", e))?
         .ok_or("Memory not found")?;
 
@@ -121,8 +116,7 @@ pub async fn execute_trigger(
     let mut stc = SynapticTaggingSystem::with_config(config);
 
     // Get recent memories to tag
-    let recent = storage.get_all_nodes(100, 0)
-        .map_err(|e| e.to_string())?;
+    let recent = storage.get_all_nodes(100, 0).map_err(|e| e.to_string())?;
 
     // Tag all recent memories
     for mem in &recent {
@@ -155,32 +149,30 @@ pub async fn execute_trigger(
 }
 
 /// Find memories with active synaptic tags
-pub async fn execute_find(
-    storage: &Arc<Storage>,
-    args: Option<Value>,
-) -> Result<Value, String> {
+pub async fn execute_find(storage: &Arc<Storage>, args: Option<Value>) -> Result<Value, String> {
     let args = args.unwrap_or(serde_json::json!({}));
 
     let min_strength = args["min_strength"].as_f64().unwrap_or(0.3);
     let limit = args["limit"].as_i64().unwrap_or(20) as usize;
 
-
     // Get memories with high retention (proxy for "tagged")
-    let memories = storage.get_all_nodes(200, 0)
-        .map_err(|e| e.to_string())?;
+    let memories = storage.get_all_nodes(200, 0).map_err(|e| e.to_string())?;
 
     // Filter by retention strength (tagged memories have higher retention)
-    let tagged: Vec<Value> = memories.into_iter()
+    let tagged: Vec<Value> = memories
+        .into_iter()
         .filter(|m| m.retention_strength >= min_strength)
         .take(limit)
-        .map(|m| serde_json::json!({
-            "id": m.id,
-            "content": m.content,
-            "retentionStrength": m.retention_strength,
-            "storageStrength": m.storage_strength,
-            "lastAccessed": m.last_accessed.to_rfc3339(),
-            "tags": m.tags
-        }))
+        .map(|m| {
+            serde_json::json!({
+                "id": m.id,
+                "content": m.content,
+                "retentionStrength": m.retention_strength,
+                "storageStrength": m.storage_strength,
+                "lastAccessed": m.last_accessed.to_rfc3339(),
+                "tags": m.tags
+            })
+        })
         .collect();
 
     Ok(serde_json::json!({
@@ -192,17 +184,22 @@ pub async fn execute_find(
 }
 
 /// Get synaptic tagging statistics
-pub async fn execute_stats(
-    storage: &Arc<Storage>,
-) -> Result<Value, String> {
-
-    let memories = storage.get_all_nodes(500, 0)
-        .map_err(|e| e.to_string())?;
+pub async fn execute_stats(storage: &Arc<Storage>) -> Result<Value, String> {
+    let memories = storage.get_all_nodes(500, 0).map_err(|e| e.to_string())?;
 
     let total = memories.len();
-    let high_retention = memories.iter().filter(|m| m.retention_strength >= 0.7).count();
-    let medium_retention = memories.iter().filter(|m| m.retention_strength >= 0.4 && m.retention_strength < 0.7).count();
-    let low_retention = memories.iter().filter(|m| m.retention_strength < 0.4).count();
+    let high_retention = memories
+        .iter()
+        .filter(|m| m.retention_strength >= 0.7)
+        .count();
+    let medium_retention = memories
+        .iter()
+        .filter(|m| m.retention_strength >= 0.4 && m.retention_strength < 0.7)
+        .count();
+    let low_retention = memories
+        .iter()
+        .filter(|m| m.retention_strength < 0.4)
+        .count();
 
     let avg_retention = if total > 0 {
         memories.iter().map(|m| m.retention_strength).sum::<f64>() / total as f64

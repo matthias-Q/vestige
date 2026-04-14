@@ -3,15 +3,29 @@
  */
 import { vi } from 'vitest';
 
+// Minimal canvas gradient mock — collects colour stops so tests can inspect
+// them if they want to, but is mostly a no-op for runtime.
+function createMockGradient() {
+	return {
+		colorStops: [] as Array<{ offset: number; color: string }>,
+		addColorStop(offset: number, color: string) {
+			this.colorStops.push({ offset, color });
+		},
+	};
+}
+
 // Minimal canvas 2D context mock
 const mockContext2D = {
 	clearRect: vi.fn(),
+	fillRect: vi.fn(),
 	fillText: vi.fn(),
 	measureText: vi.fn(() => ({ width: 100 })),
+	createRadialGradient: vi.fn(() => createMockGradient()),
+	createLinearGradient: vi.fn(() => createMockGradient()),
 	font: '',
 	textAlign: '',
 	textBaseline: '',
-	fillStyle: '',
+	fillStyle: '' as string | object,
 	shadowColor: '',
 	shadowBlur: 0,
 	shadowOffsetX: 0,

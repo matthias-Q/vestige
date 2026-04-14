@@ -159,7 +159,8 @@ pub async fn execute_system_status(
 
     let mut recommendations = Vec::new();
     if status == "critical" {
-        recommendations.push("CRITICAL: Many memories have very low retention. Review important memories.");
+        recommendations
+            .push("CRITICAL: Many memories have very low retention. Review important memories.");
     }
     if stats.nodes_due_for_review > 5 {
         recommendations.push("Review due memories to strengthen retention.");
@@ -253,7 +254,6 @@ pub async fn execute_system_status(
     };
     let last_backup = Storage::get_last_backup_timestamp();
 
-
     Ok(serde_json::json!({
         "tool": "system_status",
         // Health
@@ -336,7 +336,8 @@ pub async fn execute_health_check(
 
     let mut recommendations = Vec::new();
     if status == "critical" {
-        recommendations.push("CRITICAL: Many memories have very low retention. Review important memories.");
+        recommendations
+            .push("CRITICAL: Many memories have very low retention. Review important memories.");
     }
     if stats.nodes_due_for_review > 5 {
         recommendations.push("Review due memories to strengthen retention.");
@@ -505,7 +506,9 @@ pub async fn execute_stats(
             })
             .collect();
         if !memories_for_compression.is_empty() {
-            let groups = cog.compressor.find_compressible_groups(&memories_for_compression);
+            let groups = cog
+                .compressor
+                .find_compressible_groups(&memories_for_compression);
             Some(serde_json::json!({
                 "groupCount": groups.len(),
                 "totalCompressible": groups.iter().map(|g| g.len()).sum::<usize>(),
@@ -566,14 +569,13 @@ pub async fn execute_stats(
 }
 
 /// Backup tool
-pub async fn execute_backup(
-    storage: &Arc<Storage>,
-    _args: Option<Value>,
-) -> Result<Value, String> {
+pub async fn execute_backup(storage: &Arc<Storage>, _args: Option<Value>) -> Result<Value, String> {
     // Determine backup path
     let vestige_dir = directories::ProjectDirs::from("com", "vestige", "core")
         .ok_or("Could not determine data directory")?;
-    let backup_dir = vestige_dir.data_dir().parent()
+    let backup_dir = vestige_dir
+        .data_dir()
+        .parent()
         .unwrap_or(vestige_dir.data_dir())
         .join("backups");
 
@@ -585,7 +587,8 @@ pub async fn execute_backup(
 
     // Use VACUUM INTO for a consistent backup (handles WAL properly)
     {
-        storage.backup_to(&backup_path)
+        storage
+            .backup_to(&backup_path)
             .map_err(|e| format!("Failed to create backup: {}", e))?;
     }
 
@@ -611,10 +614,7 @@ struct ExportArgs {
 }
 
 /// Export tool
-pub async fn execute_export(
-    storage: &Arc<Storage>,
-    args: Option<Value>,
-) -> Result<Value, String> {
+pub async fn execute_export(storage: &Arc<Storage>, args: Option<Value>) -> Result<Value, String> {
     let args: ExportArgs = match args {
         Some(v) => serde_json::from_value(v).map_err(|e| format!("Invalid arguments: {}", e))?,
         None => ExportArgs {
@@ -627,7 +627,10 @@ pub async fn execute_export(
 
     let format = args.format.unwrap_or_else(|| "json".to_string());
     if format != "json" && format != "jsonl" {
-        return Err(format!("Invalid format '{}'. Must be 'json' or 'jsonl'.", format));
+        return Err(format!(
+            "Invalid format '{}'. Must be 'json' or 'jsonl'.",
+            format
+        ));
     }
 
     // Parse since date
@@ -648,7 +651,9 @@ pub async fn execute_export(
     let max_nodes = 100_000;
     let mut offset = 0;
     loop {
-        let batch = storage.get_all_nodes(page_size, offset).map_err(|e| e.to_string())?;
+        let batch = storage
+            .get_all_nodes(page_size, offset)
+            .map_err(|e| e.to_string())?;
         let batch_len = batch.len();
         all_nodes.extend(batch);
         if batch_len < page_size as usize || all_nodes.len() >= max_nodes {
@@ -661,7 +666,10 @@ pub async fn execute_export(
     let filtered: Vec<&vestige_core::KnowledgeNode> = all_nodes
         .iter()
         .filter(|node| {
-            if since_date.as_ref().is_some_and(|since_dt| node.created_at < *since_dt) {
+            if since_date
+                .as_ref()
+                .is_some_and(|since_dt| node.created_at < *since_dt)
+            {
                 return false;
             }
             if !tag_filter.is_empty() {
@@ -678,7 +686,9 @@ pub async fn execute_export(
     // Determine export path — always constrained to vestige exports directory
     let vestige_dir = directories::ProjectDirs::from("com", "vestige", "core")
         .ok_or("Could not determine data directory")?;
-    let export_dir = vestige_dir.data_dir().parent()
+    let export_dir = vestige_dir
+        .data_dir()
+        .parent()
         .unwrap_or(vestige_dir.data_dir())
         .join("exports");
     std::fs::create_dir_all(&export_dir)
@@ -725,7 +735,9 @@ pub async fn execute_export(
     }
     writer.flush().map_err(|e| e.to_string())?;
 
-    let file_size = std::fs::metadata(&export_path).map(|m| m.len()).unwrap_or(0);
+    let file_size = std::fs::metadata(&export_path)
+        .map(|m| m.len())
+        .unwrap_or(0);
 
     Ok(serde_json::json!({
         "tool": "export",
@@ -746,10 +758,7 @@ struct GcArgs {
 }
 
 /// Garbage collection tool
-pub async fn execute_gc(
-    storage: &Arc<Storage>,
-    args: Option<Value>,
-) -> Result<Value, String> {
+pub async fn execute_gc(storage: &Arc<Storage>, args: Option<Value>) -> Result<Value, String> {
     let args: GcArgs = match args {
         Some(v) => serde_json::from_value(v).map_err(|e| format!("Invalid arguments: {}", e))?,
         None => GcArgs {
@@ -771,7 +780,9 @@ pub async fn execute_gc(
     let max_nodes = 100_000;
     let mut offset = 0;
     loop {
-        let batch = storage.get_all_nodes(page_size, offset).map_err(|e| e.to_string())?;
+        let batch = storage
+            .get_all_nodes(page_size, offset)
+            .map_err(|e| e.to_string())?;
         let batch_len = batch.len();
         all_nodes.extend(batch);
         if batch_len < page_size as usize || all_nodes.len() >= max_nodes {
@@ -903,16 +914,18 @@ mod tests {
     async fn test_system_status_with_memories() {
         let (storage, _dir) = test_storage().await;
         {
-            storage.ingest(vestige_core::IngestInput {
-                content: "Test memory for status".to_string(),
-                node_type: "fact".to_string(),
-                source: None,
-                sentiment_score: 0.0,
-                sentiment_magnitude: 0.0,
-                tags: vec![],
-                valid_from: None,
-                valid_until: None,
-            }).unwrap();
+            storage
+                .ingest(vestige_core::IngestInput {
+                    content: "Test memory for status".to_string(),
+                    node_type: "fact".to_string(),
+                    source: None,
+                    sentiment_score: 0.0,
+                    sentiment_magnitude: 0.0,
+                    tags: vec![],
+                    valid_from: None,
+                    valid_until: None,
+                })
+                .unwrap();
         }
         let result = execute_system_status(&storage, &test_cognitive(), None).await;
         assert!(result.is_ok());
@@ -942,7 +955,10 @@ mod tests {
         assert!(triggers.is_object(), "automationTriggers should be present");
         assert!(triggers["lastDreamTimestamp"].is_null(), "No dreams yet");
         assert_eq!(triggers["savesSinceLastDream"], 0, "Empty DB = 0 saves");
-        assert!(triggers["lastConsolidationTimestamp"].is_null(), "No consolidation yet");
+        assert!(
+            triggers["lastConsolidationTimestamp"].is_null(),
+            "No consolidation yet"
+        );
         // lastBackupTimestamp depends on filesystem state, just check it exists
         assert!(triggers.get("lastBackupTimestamp").is_some());
     }
@@ -952,16 +968,18 @@ mod tests {
         let (storage, _dir) = test_storage().await;
         {
             for i in 0..3 {
-                storage.ingest(vestige_core::IngestInput {
-                    content: format!("Automation trigger test memory {}", i),
-                    node_type: "fact".to_string(),
-                    source: None,
-                    sentiment_score: 0.0,
-                    sentiment_magnitude: 0.0,
-                    tags: vec![],
-                    valid_from: None,
-                    valid_until: None,
-                }).unwrap();
+                storage
+                    .ingest(vestige_core::IngestInput {
+                        content: format!("Automation trigger test memory {}", i),
+                        node_type: "fact".to_string(),
+                        source: None,
+                        sentiment_score: 0.0,
+                        sentiment_magnitude: 0.0,
+                        tags: vec![],
+                        valid_from: None,
+                        valid_until: None,
+                    })
+                    .unwrap();
             }
         }
         let result = execute_system_status(&storage, &test_cognitive(), None).await;

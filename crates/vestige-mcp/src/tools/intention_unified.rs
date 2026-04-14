@@ -265,25 +265,34 @@ async fn execute_set(
             nlp_parsed = true;
             // Extract trigger info from parsed intention
             let (t_type, t_data) = match &parsed.trigger {
-                ProspectiveTrigger::TimeBased { .. } => {
-                    ("time".to_string(), serde_json::json!({"type": "time"}).to_string())
-                }
+                ProspectiveTrigger::TimeBased { .. } => (
+                    "time".to_string(),
+                    serde_json::json!({"type": "time"}).to_string(),
+                ),
                 ProspectiveTrigger::DurationBased { after, .. } => {
                     let mins = after.num_minutes();
-                    ("time".to_string(), serde_json::json!({"type": "time", "in_minutes": mins}).to_string())
+                    (
+                        "time".to_string(),
+                        serde_json::json!({"type": "time", "in_minutes": mins}).to_string(),
+                    )
                 }
-                ProspectiveTrigger::EventBased { condition, .. } => {
-                    ("event".to_string(), serde_json::json!({"type": "event", "condition": condition}).to_string())
-                }
-                ProspectiveTrigger::ContextBased { context_match } => {
-                    ("context".to_string(), serde_json::json!({"type": "context", "topic": format!("{:?}", context_match)}).to_string())
-                }
-                ProspectiveTrigger::Recurring { .. } => {
-                    ("recurring".to_string(), serde_json::json!({"type": "recurring"}).to_string())
-                }
-                _ => {
-                    ("event".to_string(), serde_json::json!({"type": "event"}).to_string())
-                }
+                ProspectiveTrigger::EventBased { condition, .. } => (
+                    "event".to_string(),
+                    serde_json::json!({"type": "event", "condition": condition}).to_string(),
+                ),
+                ProspectiveTrigger::ContextBased { context_match } => (
+                    "context".to_string(),
+                    serde_json::json!({"type": "context", "topic": format!("{:?}", context_match)})
+                        .to_string(),
+                ),
+                ProspectiveTrigger::Recurring { .. } => (
+                    "recurring".to_string(),
+                    serde_json::json!({"type": "recurring"}).to_string(),
+                ),
+                _ => (
+                    "event".to_string(),
+                    serde_json::json!({"type": "event"}).to_string(),
+                ),
             };
             nlp_trigger_type = Some(t_type);
             nlp_trigger_data = Some(t_data);
@@ -426,7 +435,6 @@ async fn execute_check(
         let _ = cog.prospective_memory.update_context(prospective_ctx);
     }
 
-
     // Get active intentions
     let intentions = storage.get_active_intentions().map_err(|e| e.to_string())?;
 
@@ -521,10 +529,7 @@ async fn execute_update(
     storage: &Arc<Storage>,
     args: &UnifiedIntentionArgs,
 ) -> Result<Value, String> {
-    let intention_id = args
-        .id
-        .as_ref()
-        .ok_or("Missing 'id' for update action")?;
+    let intention_id = args.id.as_ref().ok_or("Missing 'id' for update action")?;
 
     let status = args
         .status
@@ -690,7 +695,9 @@ mod tests {
             "action": "set",
             "description": description
         });
-        let result = execute(storage, &test_cognitive(), Some(args)).await.unwrap();
+        let result = execute(storage, &test_cognitive(), Some(args))
+            .await
+            .unwrap();
         result["intentionId"].as_str().unwrap().to_string()
     }
 
@@ -742,10 +749,12 @@ mod tests {
         assert_eq!(value["success"], true);
         assert_eq!(value["action"], "set");
         assert!(value["intentionId"].is_string());
-        assert!(value["message"]
-            .as_str()
-            .unwrap()
-            .contains("Intention created"));
+        assert!(
+            value["message"]
+                .as_str()
+                .unwrap()
+                .contains("Intention created")
+        );
     }
 
     #[tokio::test]
@@ -953,7 +962,9 @@ mod tests {
                 "codebase": "payments"
             }
         });
-        execute(&storage, &test_cognitive(), Some(set_args)).await.unwrap();
+        execute(&storage, &test_cognitive(), Some(set_args))
+            .await
+            .unwrap();
 
         // Check with matching context
         let check_args = serde_json::json!({
@@ -984,7 +995,9 @@ mod tests {
                 "at": past_time
             }
         });
-        execute(&storage, &test_cognitive(), Some(set_args)).await.unwrap();
+        execute(&storage, &test_cognitive(), Some(set_args))
+            .await
+            .unwrap();
 
         let check_args = serde_json::json!({ "action": "check" });
         let result = execute(&storage, &test_cognitive(), Some(check_args)).await;
@@ -1183,7 +1196,9 @@ mod tests {
             "id": intention_id,
             "status": "complete"
         });
-        execute(&storage, &test_cognitive(), Some(complete_args)).await.unwrap();
+        execute(&storage, &test_cognitive(), Some(complete_args))
+            .await
+            .unwrap();
 
         // Create another active one
         create_test_intention(&storage, "Active task").await;
@@ -1193,7 +1208,9 @@ mod tests {
             "action": "list",
             "filter_status": "fulfilled"
         });
-        let result = execute(&storage, &test_cognitive(), Some(list_args)).await.unwrap();
+        let result = execute(&storage, &test_cognitive(), Some(list_args))
+            .await
+            .unwrap();
         assert_eq!(result["total"], 1);
         assert_eq!(result["status"], "fulfilled");
     }
@@ -1229,14 +1246,18 @@ mod tests {
             "id": intention_id,
             "status": "complete"
         });
-        execute(&storage, &test_cognitive(), Some(complete_args)).await.unwrap();
+        execute(&storage, &test_cognitive(), Some(complete_args))
+            .await
+            .unwrap();
 
         // List all
         let list_args = serde_json::json!({
             "action": "list",
             "filter_status": "all"
         });
-        let result = execute(&storage, &test_cognitive(), Some(list_args)).await.unwrap();
+        let result = execute(&storage, &test_cognitive(), Some(list_args))
+            .await
+            .unwrap();
         assert_eq!(result["total"], 2);
     }
 
@@ -1253,7 +1274,9 @@ mod tests {
 
         // 2. Verify it appears in list
         let list_args = serde_json::json!({ "action": "list" });
-        let list_result = execute(&storage, &test_cognitive(), Some(list_args)).await.unwrap();
+        let list_result = execute(&storage, &test_cognitive(), Some(list_args))
+            .await
+            .unwrap();
         assert_eq!(list_result["total"], 1);
 
         // 3. Snooze it
@@ -1277,7 +1300,9 @@ mod tests {
 
         // 5. Verify it's no longer active
         let final_list_args = serde_json::json!({ "action": "list" });
-        let final_list = execute(&storage, &test_cognitive(), Some(final_list_args)).await.unwrap();
+        let final_list = execute(&storage, &test_cognitive(), Some(final_list_args))
+            .await
+            .unwrap();
         assert_eq!(final_list["total"], 0);
 
         // 6. Verify it's in fulfilled list
@@ -1285,7 +1310,9 @@ mod tests {
             "action": "list",
             "filter_status": "fulfilled"
         });
-        let fulfilled_list = execute(&storage, &test_cognitive(), Some(fulfilled_args)).await.unwrap();
+        let fulfilled_list = execute(&storage, &test_cognitive(), Some(fulfilled_args))
+            .await
+            .unwrap();
         assert_eq!(fulfilled_list["total"], 1);
     }
 
@@ -1299,25 +1326,33 @@ mod tests {
             "description": "Low priority task",
             "priority": "low"
         });
-        execute(&storage, &test_cognitive(), Some(args_low)).await.unwrap();
+        execute(&storage, &test_cognitive(), Some(args_low))
+            .await
+            .unwrap();
 
         let args_critical = serde_json::json!({
             "action": "set",
             "description": "Critical task",
             "priority": "critical"
         });
-        execute(&storage, &test_cognitive(), Some(args_critical)).await.unwrap();
+        execute(&storage, &test_cognitive(), Some(args_critical))
+            .await
+            .unwrap();
 
         let args_normal = serde_json::json!({
             "action": "set",
             "description": "Normal task",
             "priority": "normal"
         });
-        execute(&storage, &test_cognitive(), Some(args_normal)).await.unwrap();
+        execute(&storage, &test_cognitive(), Some(args_normal))
+            .await
+            .unwrap();
 
         // List and verify ordering (critical should be first due to priority DESC ordering)
         let list_args = serde_json::json!({ "action": "list" });
-        let list_result = execute(&storage, &test_cognitive(), Some(list_args)).await.unwrap();
+        let list_result = execute(&storage, &test_cognitive(), Some(list_args))
+            .await
+            .unwrap();
         let intentions = list_result["intentions"].as_array().unwrap();
 
         assert!(intentions.len() >= 3);
@@ -1335,10 +1370,12 @@ mod tests {
         let schema_value = schema();
         assert_eq!(schema_value["type"], "object");
         assert!(schema_value["properties"]["action"].is_object());
-        assert!(schema_value["required"]
-            .as_array()
-            .unwrap()
-            .contains(&serde_json::json!("action")));
+        assert!(
+            schema_value["required"]
+                .as_array()
+                .unwrap()
+                .contains(&serde_json::json!("action"))
+        );
     }
 
     #[test]

@@ -6,7 +6,7 @@ use serde::Deserialize;
 use serde_json::Value;
 use std::sync::Arc;
 
-use chrono::{DateTime, Utc, Duration};
+use chrono::{DateTime, Duration, Utc};
 use uuid::Uuid;
 
 use vestige_core::{IntentionRecord, Storage};
@@ -221,10 +221,7 @@ struct ListArgs {
 }
 
 /// Execute set_intention tool
-pub async fn execute_set(
-    storage: &Arc<Storage>,
-    args: Option<Value>,
-) -> Result<Value, String> {
+pub async fn execute_set(storage: &Arc<Storage>, args: Option<Value>) -> Result<Value, String> {
     let args: SetIntentionArgs = match args {
         Some(v) => serde_json::from_value(v).map_err(|e| format!("Invalid arguments: {}", e))?,
         None => return Err("Missing arguments".to_string()),
@@ -239,7 +236,10 @@ pub async fn execute_set(
 
     // Determine trigger type and data
     let (trigger_type, trigger_data) = if let Some(trigger) = &args.trigger {
-        let t_type = trigger.trigger_type.clone().unwrap_or_else(|| "time".to_string());
+        let t_type = trigger
+            .trigger_type
+            .clone()
+            .unwrap_or_else(|| "time".to_string());
         let data = serde_json::to_string(trigger).unwrap_or_else(|_| "{}".to_string());
         (t_type, data)
     } else {
@@ -256,13 +256,17 @@ pub async fn execute_set(
 
     // Parse deadline
     let deadline = args.deadline.and_then(|s| {
-        DateTime::parse_from_rfc3339(&s).ok().map(|dt| dt.with_timezone(&Utc))
+        DateTime::parse_from_rfc3339(&s)
+            .ok()
+            .map(|dt| dt.with_timezone(&Utc))
     });
 
     // Calculate trigger time if specified
     let trigger_at = if let Some(trigger) = &args.trigger {
         if let Some(at) = &trigger.at {
-            DateTime::parse_from_rfc3339(at).ok().map(|dt| dt.with_timezone(&Utc))
+            DateTime::parse_from_rfc3339(at)
+                .ok()
+                .map(|dt| dt.with_timezone(&Utc))
         } else {
             trigger.in_minutes.map(|mins| now + Duration::minutes(mins))
         }
@@ -303,13 +307,13 @@ pub async fn execute_set(
 }
 
 /// Execute check_intentions tool
-pub async fn execute_check(
-    storage: &Arc<Storage>,
-    args: Option<Value>,
-) -> Result<Value, String> {
+pub async fn execute_check(storage: &Arc<Storage>, args: Option<Value>) -> Result<Value, String> {
     let args: CheckIntentionsArgs = match args {
         Some(v) => serde_json::from_value(v).map_err(|e| format!("Invalid arguments: {}", e))?,
-        None => CheckIntentionsArgs { context: None, include_snoozed: None },
+        None => CheckIntentionsArgs {
+            context: None,
+            include_snoozed: None,
+        },
     };
 
     let now = Utc::now();
@@ -344,14 +348,20 @@ pub async fn execute_check(
                 Some("context") => {
                     if let Some(ctx) = &args.context {
                         // Check codebase match
-                        if let (Some(trigger_codebase), Some(current_codebase)) = (&t.codebase, &ctx.codebase) {
-                            current_codebase.to_lowercase().contains(&trigger_codebase.to_lowercase())
+                        if let (Some(trigger_codebase), Some(current_codebase)) =
+                            (&t.codebase, &ctx.codebase)
+                        {
+                            current_codebase
+                                .to_lowercase()
+                                .contains(&trigger_codebase.to_lowercase())
                         // Check file pattern match
                         } else if let (Some(pattern), Some(file)) = (&t.file_pattern, &ctx.file) {
                             file.contains(pattern)
                         // Check topic match
                         } else if let (Some(topic), Some(topics)) = (&t.topic, &ctx.topics) {
-                            topics.iter().any(|t| t.to_lowercase().contains(&topic.to_lowercase()))
+                            topics
+                                .iter()
+                                .any(|t| t.to_lowercase().contains(&topic.to_lowercase()))
                         } else {
                             false
                         }
@@ -406,7 +416,8 @@ pub async fn execute_complete(
         None => return Err("Missing intention_id".to_string()),
     };
 
-    let updated = storage.update_intention_status(&args.intention_id, "fulfilled")
+    let updated = storage
+        .update_intention_status(&args.intention_id, "fulfilled")
         .map_err(|e| e.to_string())?;
 
     if updated {
@@ -421,10 +432,7 @@ pub async fn execute_complete(
 }
 
 /// Execute snooze_intention tool
-pub async fn execute_snooze(
-    storage: &Arc<Storage>,
-    args: Option<Value>,
-) -> Result<Value, String> {
+pub async fn execute_snooze(storage: &Arc<Storage>, args: Option<Value>) -> Result<Value, String> {
     let args: SnoozeArgs = match args {
         Some(v) => serde_json::from_value(v).map_err(|e| format!("Invalid arguments: {}", e))?,
         None => return Err("Missing intention_id".to_string()),
@@ -433,7 +441,8 @@ pub async fn execute_snooze(
     let minutes = args.minutes.unwrap_or(30);
     let snooze_until = Utc::now() + Duration::minutes(minutes);
 
-    let updated = storage.snooze_intention(&args.intention_id, snooze_until)
+    let updated = storage
+        .snooze_intention(&args.intention_id, snooze_until)
         .map_err(|e| e.to_string())?;
 
     if updated {
@@ -449,13 +458,13 @@ pub async fn execute_snooze(
 }
 
 /// Execute list_intentions tool
-pub async fn execute_list(
-    storage: &Arc<Storage>,
-    args: Option<Value>,
-) -> Result<Value, String> {
+pub async fn execute_list(storage: &Arc<Storage>, args: Option<Value>) -> Result<Value, String> {
     let args: ListArgs = match args {
         Some(v) => serde_json::from_value(v).map_err(|e| format!("Invalid arguments: {}", e))?,
-        None => ListArgs { status: None, limit: None },
+        None => ListArgs {
+            status: None,
+            limit: None,
+        },
     };
 
     let status = args.status.as_deref().unwrap_or("active");
@@ -463,15 +472,29 @@ pub async fn execute_list(
     let intentions = if status == "all" {
         // Get all by combining different statuses
         let mut all = storage.get_active_intentions().map_err(|e| e.to_string())?;
-        all.extend(storage.get_intentions_by_status("fulfilled").map_err(|e| e.to_string())?);
-        all.extend(storage.get_intentions_by_status("cancelled").map_err(|e| e.to_string())?);
-        all.extend(storage.get_intentions_by_status("snoozed").map_err(|e| e.to_string())?);
+        all.extend(
+            storage
+                .get_intentions_by_status("fulfilled")
+                .map_err(|e| e.to_string())?,
+        );
+        all.extend(
+            storage
+                .get_intentions_by_status("cancelled")
+                .map_err(|e| e.to_string())?,
+        );
+        all.extend(
+            storage
+                .get_intentions_by_status("snoozed")
+                .map_err(|e| e.to_string())?,
+        );
         all
     } else if status == "active" {
         // Use get_active_intentions for proper priority ordering
         storage.get_active_intentions().map_err(|e| e.to_string())?
     } else {
-        storage.get_intentions_by_status(status).map_err(|e| e.to_string())?
+        storage
+            .get_intentions_by_status(status)
+            .map_err(|e| e.to_string())?
     };
 
     let limit = args.limit.unwrap_or(20) as usize;
@@ -574,7 +597,12 @@ mod tests {
         let value = result.unwrap();
         assert_eq!(value["success"], true);
         assert!(value["intentionId"].is_string());
-        assert!(value["message"].as_str().unwrap().contains("Intention created"));
+        assert!(
+            value["message"]
+                .as_str()
+                .unwrap()
+                .contains("Intention created")
+        );
     }
 
     #[tokio::test]
@@ -1017,14 +1045,24 @@ mod tests {
         let schema_value = set_schema();
         assert_eq!(schema_value["type"], "object");
         assert!(schema_value["properties"]["description"].is_object());
-        assert!(schema_value["required"].as_array().unwrap().contains(&serde_json::json!("description")));
+        assert!(
+            schema_value["required"]
+                .as_array()
+                .unwrap()
+                .contains(&serde_json::json!("description"))
+        );
     }
 
     #[test]
     fn test_complete_schema_has_required_fields() {
         let schema_value = complete_schema();
         assert!(schema_value["properties"]["intentionId"].is_object());
-        assert!(schema_value["required"].as_array().unwrap().contains(&serde_json::json!("intentionId")));
+        assert!(
+            schema_value["required"]
+                .as_array()
+                .unwrap()
+                .contains(&serde_json::json!("intentionId"))
+        );
     }
 
     #[test]
@@ -1032,7 +1070,12 @@ mod tests {
         let schema_value = snooze_schema();
         assert!(schema_value["properties"]["intentionId"].is_object());
         assert!(schema_value["properties"]["minutes"].is_object());
-        assert!(schema_value["required"].as_array().unwrap().contains(&serde_json::json!("intentionId")));
+        assert!(
+            schema_value["required"]
+                .as_array()
+                .unwrap()
+                .contains(&serde_json::json!("intentionId"))
+        );
     }
 
     #[test]

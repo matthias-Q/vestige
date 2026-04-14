@@ -101,7 +101,6 @@ pub async fn execute_semantic(
         return Err("Query cannot be empty".to_string());
     }
 
-
     // Check if embeddings are ready
     if !storage.is_embedding_ready() {
         return Ok(serde_json::json!({
@@ -140,10 +139,7 @@ pub async fn execute_semantic(
     }))
 }
 
-pub async fn execute_hybrid(
-    storage: &Arc<Storage>,
-    args: Option<Value>,
-) -> Result<Value, String> {
+pub async fn execute_hybrid(storage: &Arc<Storage>, args: Option<Value>) -> Result<Value, String> {
     let args: HybridSearchArgs = match args {
         Some(v) => serde_json::from_value(v).map_err(|e| format!("Invalid arguments: {}", e))?,
         None => return Err("Missing arguments".to_string()),
@@ -152,7 +148,6 @@ pub async fn execute_hybrid(
     if args.query.trim().is_empty() {
         return Err("Query cannot be empty".to_string());
     }
-
 
     let results = storage
         .hybrid_search(

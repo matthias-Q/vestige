@@ -5,8 +5,8 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 
 use crate::cognitive::CognitiveEngine;
-use vestige_core::advanced::{Connection, ConnectionType, MemoryChainBuilder, MemoryNode};
 use vestige_core::Storage;
+use vestige_core::advanced::{Connection, ConnectionType, MemoryChainBuilder, MemoryNode};
 
 pub fn schema() -> serde_json::Value {
     serde_json::json!({
@@ -41,8 +41,14 @@ pub async fn execute(
     args: Option<serde_json::Value>,
 ) -> Result<serde_json::Value, String> {
     let args = args.ok_or("Missing arguments")?;
-    let action = args.get("action").and_then(|v| v.as_str()).ok_or("Missing 'action'")?;
-    let from = args.get("from").and_then(|v| v.as_str()).ok_or("Missing 'from'")?;
+    let action = args
+        .get("action")
+        .and_then(|v| v.as_str())
+        .ok_or("Missing 'action'")?;
+    let from = args
+        .get("from")
+        .and_then(|v| v.as_str())
+        .ok_or("Missing 'from'")?;
     let to = args.get("to").and_then(|v| v.as_str());
     let limit = args.get("limit").and_then(|v| v.as_u64()).unwrap_or(10) as usize;
 
@@ -64,36 +70,34 @@ pub async fn execute(
             };
 
             match chain_opt {
-                Some(chain) => {
-                    Ok(serde_json::json!({
-                        "action": "chain",
-                        "from": from_owned,
-                        "to": to_owned,
-                        "steps": chain.steps.iter().map(|s| serde_json::json!({
-                            "memory_id": s.memory_id,
-                            "memory_preview": s.memory_preview,
-                            "connection_type": format!("{:?}", s.connection_type),
-                            "connection_strength": s.connection_strength,
-                            "reasoning": s.reasoning,
-                        })).collect::<Vec<_>>(),
-                        "confidence": chain.confidence,
-                        "total_hops": chain.total_hops,
-                    }))
-                }
-                None => {
-                    Ok(serde_json::json!({
-                        "action": "chain",
-                        "from": from_owned,
-                        "to": to_owned,
-                        "steps": [],
-                        "message": "No chain found between these memories"
-                    }))
-                }
+                Some(chain) => Ok(serde_json::json!({
+                    "action": "chain",
+                    "from": from_owned,
+                    "to": to_owned,
+                    "steps": chain.steps.iter().map(|s| serde_json::json!({
+                        "memory_id": s.memory_id,
+                        "memory_preview": s.memory_preview,
+                        "connection_type": format!("{:?}", s.connection_type),
+                        "connection_strength": s.connection_strength,
+                        "reasoning": s.reasoning,
+                    })).collect::<Vec<_>>(),
+                    "confidence": chain.confidence,
+                    "total_hops": chain.total_hops,
+                })),
+                None => Ok(serde_json::json!({
+                    "action": "chain",
+                    "from": from_owned,
+                    "to": to_owned,
+                    "steps": [],
+                    "message": "No chain found between these memories"
+                })),
             }
         }
         "associations" => {
             let activation_assocs = cog.activation_network.get_associations(from);
-            let hippocampal_assocs = cog.hippocampal_index.get_associations(from, 2)
+            let hippocampal_assocs = cog
+                .hippocampal_index
+                .get_associations(from, 2)
                 .unwrap_or_default();
             let from_owned = from.to_string();
             drop(cog); // release lock consistently (matches chain/bridges pattern)
@@ -120,20 +124,22 @@ pub async fn execute(
             all_associations.truncate(limit);
 
             // Fallback: if in-memory modules are empty, query storage directly
-            if all_associations.is_empty() && let Ok(connections) = storage.get_connections_for_memory(&from_owned) {
-                    for conn in connections.iter().take(limit) {
-                        let other_id = if conn.source_id == from_owned {
-                            &conn.target_id
-                        } else {
-                            &conn.source_id
-                        };
-                        all_associations.push(serde_json::json!({
-                            "memory_id": other_id,
-                            "strength": conn.strength,
-                            "link_type": conn.link_type,
-                            "source": "persistent_graph",
-                        }));
-                    }
+            if all_associations.is_empty()
+                && let Ok(connections) = storage.get_connections_for_memory(&from_owned)
+            {
+                for conn in connections.iter().take(limit) {
+                    let other_id = if conn.source_id == from_owned {
+                        &conn.target_id
+                    } else {
+                        &conn.source_id
+                    };
+                    all_associations.push(serde_json::json!({
+                        "memory_id": other_id,
+                        "strength": conn.strength,
+                        "link_type": conn.link_type,
+                        "source": "persistent_graph",
+                    }));
+                }
             }
 
             Ok(serde_json::json!({
@@ -167,12 +173,19 @@ pub async fn execute(
                 "count": limited.len(),
             }))
         }
-        _ => Err(format!("Unknown action: '{}'. Expected: chain, associations, bridges", action)),
+        _ => Err(format!(
+            "Unknown action: '{}'. Expected: chain, associations, bridges",
+            action
+        )),
     }
 }
 
 /// Build a temporary MemoryChainBuilder from persisted connections for fallback queries.
-fn build_temp_chain_builder(storage: &Arc<Storage>, from_id: &str, to_id: &str) -> MemoryChainBuilder {
+fn build_temp_chain_builder(
+    storage: &Arc<Storage>,
+    from_id: &str,
+    to_id: &str,
+) -> MemoryChainBuilder {
     let mut builder = MemoryChainBuilder::new();
 
     // Load connections involving either endpoint
@@ -191,7 +204,9 @@ fn build_temp_chain_builder(storage: &Arc<Storage>, from_id: &str, to_id: &str) 
     let mut seen_ids = std::collections::HashSet::new();
     for conn in &all_conns {
         for id in [&conn.source_id, &conn.target_id] {
-            if seen_ids.insert(id.clone()) && let Ok(Some(node)) = storage.get_node(id) {
+            if seen_ids.insert(id.clone())
+                && let Ok(Some(node)) = storage.get_node(id)
+            {
                 builder.add_memory(MemoryNode {
                     id: node.id.clone(),
                     content_preview: node.content.chars().take(100).collect(),
@@ -389,39 +404,47 @@ mod tests {
         let (storage, _dir) = test_storage().await;
 
         // Create two memories and a direct connection in storage
-        let id1 = storage.ingest(vestige_core::IngestInput {
-            content: "Memory about Rust".to_string(),
-            node_type: "fact".to_string(),
-            source: None,
-            sentiment_score: 0.0,
-            sentiment_magnitude: 0.0,
-            tags: vec!["test".to_string()],
-            valid_from: None,
-            valid_until: None,
-        }).unwrap().id;
+        let id1 = storage
+            .ingest(vestige_core::IngestInput {
+                content: "Memory about Rust".to_string(),
+                node_type: "fact".to_string(),
+                source: None,
+                sentiment_score: 0.0,
+                sentiment_magnitude: 0.0,
+                tags: vec!["test".to_string()],
+                valid_from: None,
+                valid_until: None,
+            })
+            .unwrap()
+            .id;
 
-        let id2 = storage.ingest(vestige_core::IngestInput {
-            content: "Memory about Cargo".to_string(),
-            node_type: "fact".to_string(),
-            source: None,
-            sentiment_score: 0.0,
-            sentiment_magnitude: 0.0,
-            tags: vec!["test".to_string()],
-            valid_from: None,
-            valid_until: None,
-        }).unwrap().id;
+        let id2 = storage
+            .ingest(vestige_core::IngestInput {
+                content: "Memory about Cargo".to_string(),
+                node_type: "fact".to_string(),
+                source: None,
+                sentiment_score: 0.0,
+                sentiment_magnitude: 0.0,
+                tags: vec!["test".to_string()],
+                valid_from: None,
+                valid_until: None,
+            })
+            .unwrap()
+            .id;
 
         // Save connection directly to storage (bypassing cognitive engine)
         let now = chrono::Utc::now();
-        storage.save_connection(&vestige_core::ConnectionRecord {
-            source_id: id1.clone(),
-            target_id: id2.clone(),
-            strength: 0.9,
-            link_type: "semantic".to_string(),
-            created_at: now,
-            last_activated: now,
-            activation_count: 1,
-        }).unwrap();
+        storage
+            .save_connection(&vestige_core::ConnectionRecord {
+                source_id: id1.clone(),
+                target_id: id2.clone(),
+                strength: 0.9,
+                link_type: "semantic".to_string(),
+                created_at: now,
+                last_activated: now,
+                activation_count: 1,
+            })
+            .unwrap();
 
         // Execute with empty cognitive engine — should fall back to storage
         let cognitive = test_cognitive();
@@ -447,22 +470,36 @@ mod tests {
 
         // Create 3 memories: A -> B -> C
         let make = |content: &str| vestige_core::IngestInput {
-            content: content.to_string(), node_type: "fact".to_string(),
-            source: None, sentiment_score: 0.0, sentiment_magnitude: 0.0,
-            tags: vec!["test".to_string()], valid_from: None, valid_until: None,
+            content: content.to_string(),
+            node_type: "fact".to_string(),
+            source: None,
+            sentiment_score: 0.0,
+            sentiment_magnitude: 0.0,
+            tags: vec!["test".to_string()],
+            valid_from: None,
+            valid_until: None,
         };
         let id_a = storage.ingest(make("Memory A about databases")).unwrap().id;
         let id_b = storage.ingest(make("Memory B about indexes")).unwrap().id;
-        let id_c = storage.ingest(make("Memory C about performance")).unwrap().id;
+        let id_c = storage
+            .ingest(make("Memory C about performance"))
+            .unwrap()
+            .id;
 
         // Save connections A->B and B->C to storage
         let now = chrono::Utc::now();
         for (src, tgt) in [(&id_a, &id_b), (&id_b, &id_c)] {
-            storage.save_connection(&vestige_core::ConnectionRecord {
-                source_id: src.clone(), target_id: tgt.clone(),
-                strength: 0.9, link_type: "semantic".to_string(),
-                created_at: now, last_activated: now, activation_count: 1,
-            }).unwrap();
+            storage
+                .save_connection(&vestige_core::ConnectionRecord {
+                    source_id: src.clone(),
+                    target_id: tgt.clone(),
+                    strength: 0.9,
+                    link_type: "semantic".to_string(),
+                    created_at: now,
+                    last_activated: now,
+                    activation_count: 1,
+                })
+                .unwrap();
         }
 
         // Execute chain with empty cognitive engine — should fall back to storage
@@ -472,7 +509,10 @@ mod tests {
         let value = result.unwrap();
         assert_eq!(value["action"], "chain");
         let steps = value["steps"].as_array().unwrap();
-        assert!(!steps.is_empty(), "Chain should find path A->B->C via storage fallback");
+        assert!(
+            !steps.is_empty(),
+            "Chain should find path A->B->C via storage fallback"
+        );
     }
 
     #[tokio::test]
@@ -481,9 +521,14 @@ mod tests {
 
         // Create 3 memories: A -> B -> C (B is the bridge)
         let make = |content: &str| vestige_core::IngestInput {
-            content: content.to_string(), node_type: "fact".to_string(),
-            source: None, sentiment_score: 0.0, sentiment_magnitude: 0.0,
-            tags: vec!["test".to_string()], valid_from: None, valid_until: None,
+            content: content.to_string(),
+            node_type: "fact".to_string(),
+            source: None,
+            sentiment_score: 0.0,
+            sentiment_magnitude: 0.0,
+            tags: vec!["test".to_string()],
+            valid_from: None,
+            valid_until: None,
         };
         let id_a = storage.ingest(make("Bridge test memory A")).unwrap().id;
         let id_b = storage.ingest(make("Bridge test memory B")).unwrap().id;
@@ -491,11 +536,17 @@ mod tests {
 
         let now = chrono::Utc::now();
         for (src, tgt) in [(&id_a, &id_b), (&id_b, &id_c)] {
-            storage.save_connection(&vestige_core::ConnectionRecord {
-                source_id: src.clone(), target_id: tgt.clone(),
-                strength: 0.9, link_type: "semantic".to_string(),
-                created_at: now, last_activated: now, activation_count: 1,
-            }).unwrap();
+            storage
+                .save_connection(&vestige_core::ConnectionRecord {
+                    source_id: src.clone(),
+                    target_id: tgt.clone(),
+                    strength: 0.9,
+                    link_type: "semantic".to_string(),
+                    created_at: now,
+                    last_activated: now,
+                    activation_count: 1,
+                })
+                .unwrap();
         }
 
         // Execute bridges with empty cognitive engine
@@ -505,6 +556,9 @@ mod tests {
         let value = result.unwrap();
         assert_eq!(value["action"], "bridges");
         let bridges = value["bridges"].as_array().unwrap();
-        assert!(!bridges.is_empty(), "Should find B as bridge between A and C via storage fallback");
+        assert!(
+            !bridges.is_empty(),
+            "Should find B as bridge between A and C via storage fallback"
+        );
     }
 }

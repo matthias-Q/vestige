@@ -72,20 +72,64 @@ fn compute_trust(retention: f64, stability: f64, reps: i32, lapses: i32) -> f64 
 
 #[derive(Debug, Clone, PartialEq)]
 enum QueryIntent {
-    FactCheck,   // "Is X true?" → find support/contradiction evidence
-    Timeline,    // "When did X happen?" → temporal ordering + pattern detection
-    RootCause,   // "Why did X happen?" → causal chain backward
-    Comparison,  // "How does X differ from Y?" → diff two memory clusters
-    Synthesis,   // Default: "What do I know about X?" → cluster + best per cluster
+    FactCheck,  // "Is X true?" → find support/contradiction evidence
+    Timeline,   // "When did X happen?" → temporal ordering + pattern detection
+    RootCause,  // "Why did X happen?" → causal chain backward
+    Comparison, // "How does X differ from Y?" → diff two memory clusters
+    Synthesis,  // Default: "What do I know about X?" → cluster + best per cluster
 }
 
 fn classify_intent(query: &str) -> QueryIntent {
     let q = query.to_lowercase();
     let patterns: &[(QueryIntent, &[&str])] = &[
-        (QueryIntent::RootCause, &["why did", "root cause", "what caused", "because of", "reason for", "why is", "why was"]),
-        (QueryIntent::Timeline, &["when did", "timeline", "history of", "over time", "how has", "evolution of", "sequence of"]),
-        (QueryIntent::Comparison, &["differ", "compare", "versus", " vs ", "difference between", "changed from"]),
-        (QueryIntent::FactCheck, &["is it true", "did i", "was there", "verify", "confirm", "is this correct", "should i use", "should we"]),
+        (
+            QueryIntent::RootCause,
+            &[
+                "why did",
+                "root cause",
+                "what caused",
+                "because of",
+                "reason for",
+                "why is",
+                "why was",
+            ],
+        ),
+        (
+            QueryIntent::Timeline,
+            &[
+                "when did",
+                "timeline",
+                "history of",
+                "over time",
+                "how has",
+                "evolution of",
+                "sequence of",
+            ],
+        ),
+        (
+            QueryIntent::Comparison,
+            &[
+                "differ",
+                "compare",
+                "versus",
+                " vs ",
+                "difference between",
+                "changed from",
+            ],
+        ),
+        (
+            QueryIntent::FactCheck,
+            &[
+                "is it true",
+                "did i",
+                "was there",
+                "verify",
+                "confirm",
+                "is this correct",
+                "should i use",
+                "should we",
+            ],
+        ),
     ];
     for (intent, keywords) in patterns {
         if keywords.iter().any(|kw| q.contains(kw)) {
@@ -118,9 +162,15 @@ struct RelationAssessment {
 /// Assess the relationship between two memories using embedding similarity,
 /// correction signals, temporal ordering, and trust comparison.
 /// No LLM needed — pure algorithmic assessment.
-fn assess_relation(a_content: &str, b_content: &str, a_trust: f64, b_trust: f64,
-                   a_date: chrono::DateTime<Utc>, b_date: chrono::DateTime<Utc>,
-                   topic_sim: f32) -> RelationAssessment {
+fn assess_relation(
+    a_content: &str,
+    b_content: &str,
+    a_trust: f64,
+    b_trust: f64,
+    a_date: chrono::DateTime<Utc>,
+    b_date: chrono::DateTime<Utc>,
+    topic_sim: f32,
+) -> RelationAssessment {
     // Irrelevant: different topics
     if topic_sim < 0.15 {
         return RelationAssessment {
@@ -136,12 +186,21 @@ fn assess_relation(a_content: &str, b_content: &str, a_trust: f64, b_trust: f64,
 
     // Supersession: same topic + newer + higher trust
     if topic_sim > 0.4 && time_delta_days > 0 && trust_diff > 0.05 && !has_correction {
-        let (newer, older) = if b_date > a_date { ("B", "A") } else { ("A", "B") };
+        let (newer, older) = if b_date > a_date {
+            ("B", "A")
+        } else {
+            ("A", "B")
+        };
         return RelationAssessment {
             relation: Relation::Supersedes,
             confidence: topic_sim as f64 * (0.5 + trust_diff.min(0.5)),
-            reasoning: format!("{} supersedes {} (newer by {}d, trust +{:.0}%)",
-                newer, older, time_delta_days, trust_diff * 100.0),
+            reasoning: format!(
+                "{} supersedes {} (newer by {}d, trust +{:.0}%)",
+                newer,
+                older,
+                time_delta_days,
+                trust_diff * 100.0
+            ),
         };
     }
 
@@ -150,7 +209,10 @@ fn assess_relation(a_content: &str, b_content: &str, a_trust: f64, b_trust: f64,
         return RelationAssessment {
             relation: Relation::Contradicts,
             confidence: topic_sim as f64 * 0.8,
-            reasoning: format!("Contradiction detected (similarity {:.2}, correction signals present)", topic_sim),
+            reasoning: format!(
+                "Contradiction detected (similarity {:.2}, correction signals present)",
+                topic_sim
+            ),
         };
     }
 
@@ -159,7 +221,10 @@ fn assess_relation(a_content: &str, b_content: &str, a_trust: f64, b_trust: f64,
         return RelationAssessment {
             relation: Relation::Supports,
             confidence: topic_sim as f64,
-            reasoning: format!("Topically aligned (similarity {:.2}), consistent stance", topic_sim),
+            reasoning: format!(
+                "Topically aligned (similarity {:.2}), consistent stance",
+                topic_sim
+            ),
         };
     }
 
@@ -188,29 +253,19 @@ fn generate_reasoning_chain(
     // Intent-specific opening
     match intent {
         QueryIntent::FactCheck => {
-            chain.push_str(&format!(
-                "FACT CHECK: \"{}\"\n\n", query
-            ));
+            chain.push_str(&format!("FACT CHECK: \"{}\"\n\n", query));
         }
         QueryIntent::Timeline => {
-            chain.push_str(&format!(
-                "TIMELINE: \"{}\"\n\n", query
-            ));
+            chain.push_str(&format!("TIMELINE: \"{}\"\n\n", query));
         }
         QueryIntent::RootCause => {
-            chain.push_str(&format!(
-                "ROOT CAUSE ANALYSIS: \"{}\"\n\n", query
-            ));
+            chain.push_str(&format!("ROOT CAUSE ANALYSIS: \"{}\"\n\n", query));
         }
         QueryIntent::Comparison => {
-            chain.push_str(&format!(
-                "COMPARISON: \"{}\"\n\n", query
-            ));
+            chain.push_str(&format!("COMPARISON: \"{}\"\n\n", query));
         }
         QueryIntent::Synthesis => {
-            chain.push_str(&format!(
-                "SYNTHESIS: \"{}\"\n\n", query
-            ));
+            chain.push_str(&format!("SYNTHESIS: \"{}\"\n\n", query));
         }
     }
 
@@ -223,7 +278,8 @@ fn generate_reasoning_chain(
     ));
 
     // Superseded memories — with reasoning arrows
-    let superseded: Vec<_> = relations.iter()
+    let superseded: Vec<_> = relations
+        .iter()
         .filter(|(_, _, r)| matches!(r.relation, Relation::Supersedes))
         .collect();
     for (preview, trust, rel) in &superseded {
@@ -236,11 +292,13 @@ fn generate_reasoning_chain(
     }
 
     // Supporting evidence
-    let supporting: Vec<_> = relations.iter()
+    let supporting: Vec<_> = relations
+        .iter()
         .filter(|(_, _, r)| matches!(r.relation, Relation::Supports))
         .collect();
     if !supporting.is_empty() {
-        chain.push_str(&format!("SUPPORTED BY {} MEMOR{}:\n",
+        chain.push_str(&format!(
+            "SUPPORTED BY {} MEMOR{}:\n",
             supporting.len(),
             if supporting.len() == 1 { "Y" } else { "IES" },
         ));
@@ -254,11 +312,15 @@ fn generate_reasoning_chain(
     }
 
     // Contradicting evidence
-    let contradicting: Vec<_> = relations.iter()
+    let contradicting: Vec<_> = relations
+        .iter()
         .filter(|(_, _, r)| matches!(r.relation, Relation::Contradicts))
         .collect();
     if !contradicting.is_empty() {
-        chain.push_str(&format!("CONTRADICTING EVIDENCE ({}):\n", contradicting.len()));
+        chain.push_str(&format!(
+            "CONTRADICTING EVIDENCE ({}):\n",
+            contradicting.len()
+        ));
         for (preview, trust, rel) in contradicting.iter().take(3) {
             chain.push_str(&format!(
                 "  ! (trust {:.0}%): \"{}\"\n    -> {}\n",
@@ -284,36 +346,61 @@ fn generate_reasoning_chain(
 // ============================================================================
 
 const NEGATION_PAIRS: &[(&str, &str)] = &[
-    ("don't", "do"), ("never", "always"), ("avoid", "use"),
-    ("wrong", "right"), ("incorrect", "correct"),
-    ("deprecated", "recommended"), ("outdated", "current"),
-    ("removed", "added"), ("disabled", "enabled"),
-    ("not ", ""), ("no longer", ""),
+    ("don't", "do"),
+    ("never", "always"),
+    ("avoid", "use"),
+    ("wrong", "right"),
+    ("incorrect", "correct"),
+    ("deprecated", "recommended"),
+    ("outdated", "current"),
+    ("removed", "added"),
+    ("disabled", "enabled"),
+    ("not ", ""),
+    ("no longer", ""),
 ];
 
 const CORRECTION_SIGNALS: &[&str] = &[
-    "actually", "correction", "update:", "updated:", "fixed",
-    "was wrong", "changed to", "now uses", "replaced by",
-    "superseded", "no longer", "instead of", "switched to", "migrated to",
+    "actually",
+    "correction",
+    "update:",
+    "updated:",
+    "fixed",
+    "was wrong",
+    "changed to",
+    "now uses",
+    "replaced by",
+    "superseded",
+    "no longer",
+    "instead of",
+    "switched to",
+    "migrated to",
 ];
 
 fn appears_contradictory(a: &str, b: &str) -> bool {
     let a_lower = a.to_lowercase();
     let b_lower = b.to_lowercase();
 
-    let a_words: std::collections::HashSet<&str> = a_lower.split_whitespace().filter(|w| w.len() > 3).collect();
-    let b_words: std::collections::HashSet<&str> = b_lower.split_whitespace().filter(|w| w.len() > 3).collect();
+    let a_words: std::collections::HashSet<&str> =
+        a_lower.split_whitespace().filter(|w| w.len() > 3).collect();
+    let b_words: std::collections::HashSet<&str> =
+        b_lower.split_whitespace().filter(|w| w.len() > 3).collect();
     let shared_words = a_words.intersection(&b_words).count();
 
-    if shared_words < 2 { return false; }
+    if shared_words < 2 {
+        return false;
+    }
 
     for (neg, _) in NEGATION_PAIRS {
         if (a_lower.contains(neg) && !b_lower.contains(neg))
             || (b_lower.contains(neg) && !a_lower.contains(neg))
-        { return true; }
+        {
+            return true;
+        }
     }
     for signal in CORRECTION_SIGNALS {
-        if a_lower.contains(signal) || b_lower.contains(signal) { return true; }
+        if a_lower.contains(signal) || b_lower.contains(signal) {
+            return true;
+        }
     }
     false
 }
@@ -321,12 +408,20 @@ fn appears_contradictory(a: &str, b: &str) -> bool {
 fn topic_overlap(a: &str, b: &str) -> f32 {
     let a_lower = a.to_lowercase();
     let b_lower = b.to_lowercase();
-    let a_words: std::collections::HashSet<&str> = a_lower.split_whitespace().filter(|w| w.len() > 3).collect();
-    let b_words: std::collections::HashSet<&str> = b_lower.split_whitespace().filter(|w| w.len() > 3).collect();
-    if a_words.is_empty() || b_words.is_empty() { return 0.0; }
+    let a_words: std::collections::HashSet<&str> =
+        a_lower.split_whitespace().filter(|w| w.len() > 3).collect();
+    let b_words: std::collections::HashSet<&str> =
+        b_lower.split_whitespace().filter(|w| w.len() > 3).collect();
+    if a_words.is_empty() || b_words.is_empty() {
+        return 0.0;
+    }
     let intersection = a_words.intersection(&b_words).count();
     let union = a_words.union(&b_words).count();
-    if union == 0 { 0.0 } else { intersection as f32 / union as f32 }
+    if union == 0 {
+        0.0
+    } else {
+        intersection as f32 / union as f32
+    }
 }
 
 // ============================================================================
@@ -389,7 +484,10 @@ pub async fn execute(
 
     let mut ranked = results;
     if let Ok(mut cog) = cognitive.try_lock() {
-        let candidates: Vec<_> = ranked.iter().map(|r| (r.clone(), r.node.content.clone())).collect();
+        let candidates: Vec<_> = ranked
+            .iter()
+            .map(|r| (r.clone(), r.node.content.clone()))
+            .collect();
         if let Ok(reranked) = cog.reranker.rerank(&args.query, candidates, Some(depth)) {
             ranked = reranked.into_iter().map(|rr| rr.item).collect();
         }
@@ -399,7 +497,8 @@ pub async fn execute(
     // STAGE 2: Spreading Activation Expansion
     // ====================================================================
     let mut activation_expanded = 0usize;
-    let existing_ids: std::collections::HashSet<String> = ranked.iter().map(|r| r.node.id.clone()).collect();
+    let existing_ids: std::collections::HashSet<String> =
+        ranked.iter().map(|r| r.node.id.clone()).collect();
 
     if let Ok(mut cog) = cognitive.try_lock() {
         let mut expanded_ids = Vec::new();
@@ -431,24 +530,27 @@ pub async fn execute(
     // STAGE 3: FSRS-6 Trust Scoring
     // ====================================================================
 
-    let scored: Vec<ScoredMemory> = ranked.iter().map(|r| {
-        let trust = compute_trust(
-            r.node.retention_strength,
-            r.node.stability,
-            r.node.reps,
-            r.node.lapses,
-        );
-        ScoredMemory {
-            id: r.node.id.clone(),
-            content: r.node.content.clone(),
-            tags: r.node.tags.clone(),
-            trust,
-            updated_at: r.node.updated_at,
-            created_at: r.node.created_at,
-            retention: r.node.retention_strength,
-            combined_score: r.combined_score,
-        }
-    }).collect();
+    let scored: Vec<ScoredMemory> = ranked
+        .iter()
+        .map(|r| {
+            let trust = compute_trust(
+                r.node.retention_strength,
+                r.node.stability,
+                r.node.reps,
+                r.node.lapses,
+            );
+            ScoredMemory {
+                id: r.node.id.clone(),
+                content: r.node.content.clone(),
+                tags: r.node.tags.clone(),
+                trust,
+                updated_at: r.node.updated_at,
+                created_at: r.node.created_at,
+                retention: r.node.retention_strength,
+                combined_score: r.combined_score,
+            }
+        })
+        .collect();
 
     // ====================================================================
     // STAGE 4: Temporal Supersession
@@ -488,14 +590,20 @@ pub async fn execute(
             let a = &scored[i];
             let b = &scored[j];
             let overlap = topic_overlap(&a.content, &b.content);
-            if overlap < 0.15 { continue; }
+            if overlap < 0.15 {
+                continue;
+            }
 
             let is_contradiction = appears_contradictory(&a.content, &b.content);
-            if !is_contradiction { continue; }
+            if !is_contradiction {
+                continue;
+            }
 
             // Only flag as real contradiction if BOTH have decent trust
             let min_trust = a.trust.min(b.trust);
-            if min_trust < 0.3 { continue; } // Low-trust memory isn't worth flagging
+            if min_trust < 0.3 {
+                continue;
+            } // Low-trust memory isn't worth flagging
 
             let (stronger, weaker) = if a.trust >= b.trust { (a, b) } else { (b, a) };
             contradictions.push(serde_json::json!({
@@ -521,9 +629,12 @@ pub async fn execute(
     // ====================================================================
     let mut related_insights: Vec<Value> = Vec::new();
     if let Ok(insights) = storage.get_insights(20) {
-        let memory_ids: std::collections::HashSet<&str> = scored.iter().map(|s| s.id.as_str()).collect();
+        let memory_ids: std::collections::HashSet<&str> =
+            scored.iter().map(|s| s.id.as_str()).collect();
         for insight in insights {
-            let overlaps = insight.source_memories.iter()
+            let overlaps = insight
+                .source_memories
+                .iter()
                 .any(|src_id| memory_ids.contains(src_id.as_str()));
             if overlaps {
                 related_insights.push(serde_json::json!({
@@ -540,27 +651,35 @@ pub async fn execute(
     // STAGE 7: Relation Assessment (per-pair, using trust + temporal + similarity)
     // ====================================================================
     let mut pair_relations: Vec<(String, f64, RelationAssessment)> = Vec::new();
-    if let Some(primary) = scored.iter()
+    if let Some(primary) = scored
+        .iter()
         .filter(|s| !superseded_ids.contains(&s.id))
-        .max_by(|a, b| a.trust.partial_cmp(&b.trust).unwrap_or(std::cmp::Ordering::Equal))
+        .max_by(|a, b| {
+            a.trust
+                .partial_cmp(&b.trust)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        })
     {
         for other in scored.iter().filter(|s| s.id != primary.id).take(15) {
             // Use combined_score as a proxy for semantic similarity (already reranked)
             // Fall back to topic_overlap for keyword-level comparison
             let sim = topic_overlap(&primary.content, &other.content);
-            let effective_sim = if other.combined_score > 0.2 { sim.max(0.3) } else { sim };
+            let effective_sim = if other.combined_score > 0.2 {
+                sim.max(0.3)
+            } else {
+                sim
+            };
             let rel = assess_relation(
-                &primary.content, &other.content,
-                primary.trust, other.trust,
-                primary.updated_at, other.updated_at,
+                &primary.content,
+                &other.content,
+                primary.trust,
+                other.trust,
+                primary.updated_at,
+                other.updated_at,
                 effective_sim,
             );
             if !matches!(rel.relation, Relation::Irrelevant) {
-                pair_relations.push((
-                    other.content.chars().take(100).collect(),
-                    other.trust,
-                    rel,
-                ));
+                pair_relations.push((other.content.chars().take(100).collect(), other.trust, rel));
             }
         }
     }
@@ -595,25 +714,32 @@ pub async fn execute(
             .partial_cmp(&composite(a))
             .unwrap_or(std::cmp::Ordering::Equal)
     });
-    let evidence: Vec<Value> = non_superseded.iter()
+    let evidence: Vec<Value> = non_superseded
+        .iter()
         .take(10)
         .enumerate()
-        .map(|(i, s)| serde_json::json!({
-            "id": s.id,
-            "preview": s.content.chars().take(200).collect::<String>(),
-            "trust": (s.trust * 100.0).round() / 100.0,
-            "date": s.updated_at.to_rfc3339(),
-            "role": if i == 0 { "primary" } else { "supporting" },
-        }))
+        .map(|(i, s)| {
+            serde_json::json!({
+                "id": s.id,
+                "preview": s.content.chars().take(200).collect::<String>(),
+                "trust": (s.trust * 100.0).round() / 100.0,
+                "date": s.updated_at.to_rfc3339(),
+                "role": if i == 0 { "primary" } else { "supporting" },
+            })
+        })
         .collect();
 
     // Build evolution timeline
-    let mut evolution: Vec<Value> = by_date.iter().rev()
-        .map(|s| serde_json::json!({
-            "date": s.updated_at.format("%b %d, %Y").to_string(),
-            "preview": s.content.chars().take(100).collect::<String>(),
-            "trust": (s.trust * 100.0).round() / 100.0,
-        }))
+    let mut evolution: Vec<Value> = by_date
+        .iter()
+        .rev()
+        .map(|s| {
+            serde_json::json!({
+                "date": s.updated_at.format("%b %d, %Y").to_string(),
+                "preview": s.content.chars().take(100).collect::<String>(),
+                "trust": (s.trust * 100.0).round() / 100.0,
+            })
+        })
         .collect();
     evolution.truncate(15); // cap timeline length
 
@@ -639,12 +765,15 @@ pub async fn execute(
         if contradictions.is_empty() {
             format!(
                 "High confidence ({:.0}%). Recommended memory (trust {:.0}%, {}) is the most reliable source.",
-                confidence * 100.0, rec.trust * 100.0, rec.updated_at.format("%b %d, %Y")
+                confidence * 100.0,
+                rec.trust * 100.0,
+                rec.updated_at.format("%b %d, %Y")
             )
         } else {
             format!(
                 "WARNING: {} contradiction(s) detected. Recommended memory has trust {:.0}% but conflicts exist. Review contradictions below.",
-                contradictions.len(), rec.trust * 100.0
+                contradictions.len(),
+                rec.trust * 100.0
             )
         }
     } else {
@@ -683,11 +812,21 @@ pub async fn execute(
         });
     }
 
-    if !evidence.is_empty() { response["evidence"] = serde_json::json!(evidence); }
-    if !contradictions.is_empty() { response["contradictions"] = serde_json::json!(contradictions); }
-    if !superseded.is_empty() { response["superseded"] = serde_json::json!(superseded); }
-    if !evolution.is_empty() { response["evolution"] = serde_json::json!(evolution); }
-    if !related_insights.is_empty() { response["related_insights"] = serde_json::json!(related_insights); }
+    if !evidence.is_empty() {
+        response["evidence"] = serde_json::json!(evidence);
+    }
+    if !contradictions.is_empty() {
+        response["contradictions"] = serde_json::json!(contradictions);
+    }
+    if !superseded.is_empty() {
+        response["superseded"] = serde_json::json!(superseded);
+    }
+    if !evolution.is_empty() {
+        response["evolution"] = serde_json::json!(evolution);
+    }
+    if !related_insights.is_empty() {
+        response["related_insights"] = serde_json::json!(related_insights);
+    }
 
     Ok(response)
 }
@@ -849,7 +988,11 @@ mod tests {
     fn test_trust_score_medium() {
         // Medium everything
         let trust = compute_trust(0.6, 15.0, 5, 2);
-        assert!(trust > 0.4 && trust < 0.7, "Expected 0.4-0.7, got {}", trust);
+        assert!(
+            trust > 0.4 && trust < 0.7,
+            "Expected 0.4-0.7, got {}",
+            trust
+        );
     }
 
     #[test]
@@ -861,7 +1004,10 @@ mod tests {
 
     #[test]
     fn test_contradiction_requires_shared_words() {
-        assert!(!appears_contradictory("not sure about weather", "Rust is fast"));
+        assert!(!appears_contradictory(
+            "not sure about weather",
+            "Rust is fast"
+        ));
     }
 
     #[test]
@@ -874,7 +1020,10 @@ mod tests {
 
     #[test]
     fn test_topic_overlap_similar() {
-        let overlap = topic_overlap("Vestige uses USearch for vector search", "Vestige vector search powered by USearch HNSW");
+        let overlap = topic_overlap(
+            "Vestige uses USearch for vector search",
+            "Vestige vector search powered by USearch HNSW",
+        );
         assert!(overlap > 0.3);
     }
 
@@ -895,32 +1044,62 @@ mod tests {
 
     #[test]
     fn test_intent_fact_check() {
-        assert_eq!(classify_intent("Is it true that Vestige uses USearch?"), QueryIntent::FactCheck);
-        assert_eq!(classify_intent("Did I switch to port 3002?"), QueryIntent::FactCheck);
-        assert_eq!(classify_intent("Should I use prefix caching?"), QueryIntent::FactCheck);
+        assert_eq!(
+            classify_intent("Is it true that Vestige uses USearch?"),
+            QueryIntent::FactCheck
+        );
+        assert_eq!(
+            classify_intent("Did I switch to port 3002?"),
+            QueryIntent::FactCheck
+        );
+        assert_eq!(
+            classify_intent("Should I use prefix caching?"),
+            QueryIntent::FactCheck
+        );
     }
 
     #[test]
     fn test_intent_timeline() {
-        assert_eq!(classify_intent("When did the port change happen?"), QueryIntent::Timeline);
-        assert_eq!(classify_intent("How has the AIMO3 score evolved over time?"), QueryIntent::Timeline);
+        assert_eq!(
+            classify_intent("When did the port change happen?"),
+            QueryIntent::Timeline
+        );
+        assert_eq!(
+            classify_intent("How has the AIMO3 score evolved over time?"),
+            QueryIntent::Timeline
+        );
     }
 
     #[test]
     fn test_intent_root_cause() {
-        assert_eq!(classify_intent("Why did the build fail?"), QueryIntent::RootCause);
-        assert_eq!(classify_intent("What caused the score regression?"), QueryIntent::RootCause);
+        assert_eq!(
+            classify_intent("Why did the build fail?"),
+            QueryIntent::RootCause
+        );
+        assert_eq!(
+            classify_intent("What caused the score regression?"),
+            QueryIntent::RootCause
+        );
     }
 
     #[test]
     fn test_intent_comparison() {
-        assert_eq!(classify_intent("How does USearch differ from FAISS?"), QueryIntent::Comparison);
-        assert_eq!(classify_intent("Compare FSRS versus SM-2"), QueryIntent::Comparison);
+        assert_eq!(
+            classify_intent("How does USearch differ from FAISS?"),
+            QueryIntent::Comparison
+        );
+        assert_eq!(
+            classify_intent("Compare FSRS versus SM-2"),
+            QueryIntent::Comparison
+        );
     }
 
     #[test]
     fn test_intent_synthesis_default() {
-        assert_eq!(classify_intent("Tell me about Sam's projects"), QueryIntent::Synthesis);
+        assert_eq!(
+            classify_intent("Tell me about Sam's projects"),
+            QueryIntent::Synthesis
+        );
         assert_eq!(classify_intent("What is Vestige?"), QueryIntent::Synthesis);
     }
 
@@ -928,8 +1107,15 @@ mod tests {
 
     #[test]
     fn test_relation_irrelevant() {
-        let rel = assess_relation("Rust is fast", "The weather is nice", 0.8, 0.8,
-            Utc::now(), Utc::now(), 0.05);
+        let rel = assess_relation(
+            "Rust is fast",
+            "The weather is nice",
+            0.8,
+            0.8,
+            Utc::now(),
+            Utc::now(),
+            0.05,
+        );
         assert!(matches!(rel.relation, Relation::Irrelevant));
     }
 
@@ -938,7 +1124,12 @@ mod tests {
         let rel = assess_relation(
             "Vestige uses USearch for vector search",
             "USearch provides fast HNSW indexing for Vestige",
-            0.8, 0.7, Utc::now(), Utc::now(), 0.6);
+            0.8,
+            0.7,
+            Utc::now(),
+            Utc::now(),
+            0.6,
+        );
         assert!(matches!(rel.relation, Relation::Supports));
     }
 
@@ -947,7 +1138,12 @@ mod tests {
         let rel = assess_relation(
             "Don't use FAISS for vector search in production anymore",
             "Use FAISS for vector search in production always",
-            0.8, 0.5, Utc::now(), Utc::now(), 0.7);
+            0.8,
+            0.5,
+            Utc::now(),
+            Utc::now(),
+            0.7,
+        );
         assert!(matches!(rel.relation, Relation::Contradicts));
     }
 }

@@ -2,6 +2,37 @@ import * as THREE from 'three';
 import type { GraphNode } from '$types';
 import { NODE_TYPE_COLORS } from '$types';
 
+// Shared radial-gradient texture used for every node's glow Sprite.
+// Without a map, THREE.Sprite renders as a flat coloured plane — additive-
+// blending + UnrealBloomPass then amplifies its square edges into the
+// hard-edged "glowing cubes" artefact reported in issue #31. Using a
+// soft radial gradient gives a real round halo and lets bloom do its job.
+let sharedGlowTexture: THREE.Texture | null = null;
+function getGlowTexture(): THREE.Texture {
+	if (sharedGlowTexture) return sharedGlowTexture;
+	const size = 128;
+	const canvas = document.createElement('canvas');
+	canvas.width = size;
+	canvas.height = size;
+	const ctx = canvas.getContext('2d');
+	if (!ctx) {
+		// Fallback: empty 1x1 texture; halos will be invisible but nothing crashes.
+		sharedGlowTexture = new THREE.Texture();
+		return sharedGlowTexture;
+	}
+	const gradient = ctx.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
+	gradient.addColorStop(0.0, 'rgba(255, 255, 255, 1.0)');
+	gradient.addColorStop(0.25, 'rgba(255, 255, 255, 0.7)');
+	gradient.addColorStop(0.55, 'rgba(255, 255, 255, 0.2)');
+	gradient.addColorStop(1.0, 'rgba(255, 255, 255, 0.0)');
+	ctx.fillStyle = gradient;
+	ctx.fillRect(0, 0, size, size);
+	const tex = new THREE.CanvasTexture(canvas);
+	tex.needsUpdate = true;
+	sharedGlowTexture = tex;
+	return tex;
+}
+
 function easeOutElastic(t: number): number {
 	if (t === 0 || t === 1) return t;
 	const p = 0.3;
@@ -90,16 +121,20 @@ export class NodeManager {
 		const size = 0.5 + node.retention * 2;
 		const color = NODE_TYPE_COLORS[node.type] || '#8B95A5';
 
+		// v2.0.5 Active Forgetting: suppressed memories dim to 20% opacity
+		// and lose their emissive glow, mimicking inhibitory-control silencing.
+		const isSuppressed = (node.suppression_count ?? 0) > 0;
+
 		// Node mesh
 		const geometry = new THREE.SphereGeometry(size, 16, 16);
 		const material = new THREE.MeshStandardMaterial({
 			color: new THREE.Color(color),
 			emissive: new THREE.Color(color),
-			emissiveIntensity: 0.3 + node.retention * 0.5,
+			emissiveIntensity: isSuppressed ? 0.0 : 0.3 + node.retention * 0.5,
 			roughness: 0.3,
 			metalness: 0.1,
 			transparent: true,
-			opacity: 0.3 + node.retention * 0.7,
+			opacity: isSuppressed ? 0.2 : 0.3 + node.retention * 0.7,
 		});
 
 		const mesh = new THREE.Mesh(geometry, material);
@@ -109,15 +144,20 @@ export class NodeManager {
 		this.meshMap.set(node.id, mesh);
 		this.group.add(mesh);
 
-		// Glow sprite
+		// Glow sprite — radial-gradient texture kills the square-halo artefact
+		// from issue #31. depthWrite:false prevents z-fighting with the sphere.
 		const spriteMat = new THREE.SpriteMaterial({
+			map: getGlowTexture(),
 			color: new THREE.Color(color),
 			transparent: true,
-			opacity: initialScale > 0 ? 0.15 + node.retention * 0.2 : 0,
+			opacity: initialScale > 0 ? (isSuppressed ? 0.1 : 0.3 + node.retention * 0.35) : 0,
 			blending: THREE.AdditiveBlending,
+			depthWrite: false,
 		});
 		const sprite = new THREE.Sprite(spriteMat);
-		sprite.scale.set(size * 4 * initialScale, size * 4 * initialScale, 1);
+		// Slightly larger halo — the gradient falls off quickly so we need
+		// more screen real estate for a visible soft bloom footprint.
+		sprite.scale.set(size * 6 * initialScale, size * 6 * initialScale, 1);
 		sprite.position.copy(pos);
 		sprite.userData = { isGlow: true, nodeId: node.id };
 		this.glowMap.set(node.id, sprite);
@@ -275,8 +315,8 @@ export class NodeManager {
 			if (mn.frame >= 5) {
 				const glowT = Math.min((mn.frame - 5) / 5, 1);
 				const glowMat = mn.glow.material as THREE.SpriteMaterial;
-				glowMat.opacity = glowT * 0.25;
-				const glowSize = mn.targetScale * 4 * scale;
+				glowMat.opacity = glowT * 0.4;
+				const glowSize = mn.targetScale * 6 * scale;
 				mn.glow.scale.set(glowSize, glowSize, 1);
 			}
 
@@ -300,7 +340,7 @@ export class NodeManager {
 			const scale = Math.max(0.001, dn.originalScale * shrink);
 
 			dn.mesh.scale.setScalar(scale);
-			const glowScale = scale * 4;
+			const glowScale = scale * 6;
 			dn.glow.scale.set(glowScale, glowScale, 1);
 
 			// Fade opacity
@@ -342,7 +382,7 @@ export class NodeManager {
 
 			const glow = this.glowMap.get(gn.id);
 			if (glow) {
-				const glowSize = scale * 4;
+				const glowSize = scale * 6;
 				glow.scale.set(glowSize, glowSize, 1);
 			}
 

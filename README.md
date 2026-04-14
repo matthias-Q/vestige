@@ -6,7 +6,7 @@
 
 [![GitHub stars](https://img.shields.io/github/stars/samvallad33/vestige?style=social)](https://github.com/samvallad33/vestige)
 [![Release](https://img.shields.io/github/v/release/samvallad33/vestige)](https://github.com/samvallad33/vestige/releases/latest)
-[![Tests](https://img.shields.io/badge/tests-758%20passing-brightgreen)](https://github.com/samvallad33/vestige/actions)
+[![Tests](https://img.shields.io/badge/tests-1284%20passing-brightgreen)](https://github.com/samvallad33/vestige/actions)
 [![License](https://img.shields.io/badge/license-AGPL--3.0-blue)](LICENSE)
 [![MCP Compatible](https://img.shields.io/badge/MCP-compatible-green)](https://modelcontextprotocol.io)
 
@@ -14,21 +14,30 @@
 
 Built on 130 years of memory research — FSRS-6 spaced repetition, prediction error gating, synaptic tagging, spreading activation, memory dreaming — all running in a single Rust binary with a 3D neural visualization dashboard. 100% local. Zero cloud.
 
-[Quick Start](#quick-start) | [Dashboard](#-3d-memory-dashboard) | [How It Works](#-the-cognitive-science-stack) | [Tools](#-23-mcp-tools) | [Docs](docs/)
+[Quick Start](#quick-start) | [Dashboard](#-3d-memory-dashboard) | [How It Works](#-the-cognitive-science-stack) | [Tools](#-24-mcp-tools) | [Docs](docs/)
 
 </div>
 
 ---
 
-## What's New in v2.0 "Cognitive Leap"
+## What's New in v2.0.5 "Intentional Amnesia"
 
-- **3D Memory Dashboard** — SvelteKit + Three.js neural visualization with real-time WebSocket events, bloom post-processing, force-directed graph layout. Watch your AI's mind in real-time.
-- **WebSocket Event Bus** — Every cognitive operation broadcasts events: memory creation, search, dreaming, consolidation, retention decay
-- **HyDE Query Expansion** — Template-based Hypothetical Document Embeddings for dramatically improved search quality on conceptual queries
-- **Nomic v2 MoE (experimental)** — fastembed 5.11 with optional Nomic Embed Text v2 MoE (475M params, 8 experts) + Metal GPU acceleration. Default: v1.5 (8192 token context)
-- **Command Palette** — `Cmd+K` navigation, keyboard shortcuts, responsive mobile layout, PWA installable
-- **FSRS Decay Visualization** — SVG retention curves with predicted decay at 1d/7d/30d, endangered memory alerts
-- **29 cognitive modules** — 1,238 tests, 79,600+ LOC
+The first AI memory system that can actively forget. New **`suppress`** tool applies top-down inhibitory control over retrieval — each call compounds a penalty (up to 80%), a background Rac1 worker fades co-activated neighbors over 72h, and it's reversible within a 24h labile window. **Never deletes** — the memory is inhibited, not erased.
+
+Based on [Anderson et al. 2025](https://www.nature.com/articles/s41583-025-00929-y) (Suppression-Induced Forgetting) and [Cervantes-Sandoval et al. 2020](https://pmc.ncbi.nlm.nih.gov/articles/PMC7477079/) (Rac1 synaptic cascade). **24 tools · 30 cognitive modules · 1,284 tests.**
+
+<details>
+<summary>Earlier releases (v2.0 "Cognitive Leap" → v2.0.4 "Deep Reference")</summary>
+
+- **v2.0.4 — `deep_reference` Tool** — 8-stage cognitive reasoning pipeline with FSRS-6 trust scoring, intent classification, spreading activation, contradiction analysis, and pre-built reasoning chains. Token budgets raised 10K → 100K. CORS tightened.
+- **v2.0 — 3D Memory Dashboard** — SvelteKit + Three.js neural visualization with real-time WebSocket events, bloom post-processing, force-directed graph layout.
+- **v2.0 — WebSocket Event Bus** — Every cognitive operation broadcasts events: memory creation, search, dreaming, consolidation, retention decay.
+- **v2.0 — HyDE Query Expansion** — Template-based Hypothetical Document Embeddings for dramatically improved search quality on conceptual queries.
+- **v2.0 — Nomic v2 MoE (experimental)** — fastembed 5.11 with optional Nomic Embed Text v2 MoE (475M params, 8 experts) + Metal GPU acceleration.
+- **v2.0 — Command Palette** — `Cmd+K` navigation, keyboard shortcuts, responsive mobile layout, PWA installable.
+- **v2.0 — FSRS Decay Visualization** — SVG retention curves with predicted decay at 1d/7d/30d.
+
+</details>
 
 ---
 
@@ -132,7 +141,7 @@ The dashboard runs automatically at `http://localhost:3927/dashboard` when the M
 │  15 REST endpoints · WS event broadcast              │
 ├─────────────────────────────────────────────────────┤
 │  MCP Server (stdio JSON-RPC)                         │
-│  23 tools · 29 cognitive modules                     │
+│  24 tools · 30 cognitive modules                     │
 ├─────────────────────────────────────────────────────┤
 │  Cognitive Engine                                    │
 │  ┌──────────┐ ┌──────────┐ ┌───────────────┐       │
@@ -192,11 +201,13 @@ This isn't a key-value store with an embedding model bolted on. Vestige implemen
 
 **Autonomic Regulation** — Self-regulating memory health. Auto-promotes frequently accessed memories. Auto-GCs low-retention memories. Consolidation triggers on 6h staleness or 2h active use.
 
+**Active Forgetting** *(v2.0.5)* — Top-down inhibitory control via the `suppress` tool, distinct from passive FSRS decay and from bottom-up retrieval-induced forgetting. Each call compounds (Suppression-Induced Forgetting), a background Rac1 cascade worker fades co-activated neighbors, and a 24-hour labile window allows reversal. The memory persists — it's **inhibited, not erased**. Based on [Anderson et al., 2025](https://www.nature.com/articles/s41583-025-00929-y) and [Cervantes-Sandoval et al., 2020](https://pmc.ncbi.nlm.nih.gov/articles/PMC7477079/). First AI memory system to implement this.
+
 [Full science documentation ->](docs/SCIENCE.md)
 
 ---
 
-## 🛠 23 MCP Tools
+## 🛠 24 MCP Tools
 
 ### Context Packets
 | Tool | What It Does |
@@ -247,6 +258,11 @@ This isn't a key-value store with an embedding model bolted on. Vestige implemen
 | `deep_reference` | **Cognitive reasoning across memories.** 8-stage pipeline: FSRS-6 trust scoring, intent classification, spreading activation, temporal supersession, contradiction analysis, relation assessment, dream insight integration, and algorithmic reasoning chain generation. Returns trust-scored evidence with a pre-built reasoning scaffold. |
 | `cross_reference` | Backward-compatible alias for `deep_reference`. |
 
+### Active Forgetting (v2.0.5)
+| Tool | What It Does |
+|------|-------------|
+| `suppress` | **Top-down active forgetting** — neuroscience-grounded inhibitory control over retrieval. Distinct from `memory.delete` (destroys the row) and `memory.demote` (one-shot ranking hit). Each call **compounds** a retrieval-score penalty (Anderson 2025 SIF), and a background Rac1 cascade worker fades co-activated neighbors over 72h (Davis 2020). Reversible within a 24-hour labile window via `reverse: true`. **The memory persists** — it is inhibited, not erased. |
+
 ---
 
 ## Make Your AI Use Vestige Automatically
@@ -278,7 +294,7 @@ At the start of every session:
 | Metric | Value |
 |--------|-------|
 | **Language** | Rust 2024 edition (MSRV 1.91) |
-| **Codebase** | 79,600+ lines, 1,238 tests |
+| **Codebase** | 80,000+ lines, 1,284 tests (364 core + 419 mcp + 497 e2e + 4 doctests) |
 | **Binary size** | ~20MB |
 | **Embeddings** | Nomic Embed Text v1.5 (768d → 256d Matryoshka, 8192 context) |
 | **Vector search** | USearch HNSW (20x faster than FAISS) |
@@ -286,7 +302,7 @@ At the start of every session:
 | **Storage** | SQLite + FTS5 (optional SQLCipher encryption) |
 | **Dashboard** | SvelteKit 2 + Svelte 5 + Three.js + Tailwind CSS 4 |
 | **Transport** | MCP stdio (JSON-RPC 2.0) + WebSocket |
-| **Cognitive modules** | 29 stateful (16 neuroscience, 11 advanced, 2 search) |
+| **Cognitive modules** | 30 stateful (17 neuroscience, 11 advanced, 2 search) |
 | **First run** | Downloads embedding model (~130MB), then fully offline |
 | **Platforms** | macOS (ARM/Intel), Linux (x86_64), Windows |
 
@@ -386,5 +402,5 @@ AGPL-3.0 — free to use, modify, and self-host. If you offer Vestige as a netwo
 
 <p align="center">
   <i>Built by <a href="https://github.com/samvallad33">@samvallad33</a></i><br>
-  <sub>79,600+ lines of Rust · 29 cognitive modules · 130 years of memory research · one 22MB binary</sub>
+  <sub>80,000+ lines of Rust · 30 cognitive modules · 130 years of memory research · one 22MB binary</sub>
 </p>

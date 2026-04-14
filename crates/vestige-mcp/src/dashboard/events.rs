@@ -38,6 +38,24 @@ pub enum VestigeEvent {
         new_retention: f64,
         timestamp: DateTime<Utc>,
     },
+    // v2.0.5: Active forgetting — top-down suppression (Anderson 2025 + Davis Rac1)
+    MemorySuppressed {
+        id: String,
+        suppression_count: i32,
+        estimated_cascade: usize,
+        reversible_until: DateTime<Utc>,
+        timestamp: DateTime<Utc>,
+    },
+    MemoryUnsuppressed {
+        id: String,
+        remaining_count: i32,
+        timestamp: DateTime<Utc>,
+    },
+    Rac1CascadeSwept {
+        seeds: usize,
+        neighbors_affected: usize,
+        timestamp: DateTime<Utc>,
+    },
 
     // -- Search --
     SearchPerformed {
@@ -119,6 +137,9 @@ pub enum VestigeEvent {
         uptime_secs: u64,
         memory_count: usize,
         avg_retention: f64,
+        /// v2.0.5: memories with suppression_count > 0 (actively forgetting)
+        #[serde(default)]
+        suppressed_count: usize,
         timestamp: DateTime<Utc>,
     },
 }

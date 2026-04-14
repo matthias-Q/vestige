@@ -101,3 +101,7 @@ export const memoryCount = derived(websocket, $ws =>
 export const avgRetention = derived(websocket, $ws =>
 	($ws.lastHeartbeat?.data?.avg_retention as number) ?? 0
 );
+// v2.0.5: count of memories actively being forgotten (suppression_count > 0)
+export const suppressedCount = derived(websocket, $ws =>
+	($ws.lastHeartbeat?.data?.suppressed_count as number) ?? 0
+);

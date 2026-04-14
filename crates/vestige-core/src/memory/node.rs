@@ -179,6 +179,15 @@ pub struct KnowledgeNode {
     /// Which model generated the embedding
     #[serde(skip_serializing_if = "Option::is_none")]
     pub embedding_model: Option<String>,
+
+    // ========== Active Forgetting (v2.0.5, Anderson 2025 + Davis Rac1) ==========
+    /// Top-down suppression count — compounds with each `suppress` call
+    /// (Suppression-Induced Forgetting, Anderson 2025).
+    #[serde(default)]
+    pub suppression_count: i32,
+    /// Timestamp of the most recent suppression (for 24h labile window).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub suppressed_at: Option<DateTime<Utc>>,
 }
 
 impl Default for KnowledgeNode {
@@ -213,6 +222,8 @@ impl Default for KnowledgeNode {
             temporal_level: None,
             has_embedding: None,
             embedding_model: None,
+            suppression_count: 0,
+            suppressed_at: None,
         }
     }
 }

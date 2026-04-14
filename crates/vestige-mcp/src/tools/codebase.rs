@@ -7,7 +7,6 @@ use serde::Deserialize;
 use serde_json::Value;
 use std::sync::Arc;
 
-
 use vestige_core::{IngestInput, Storage};
 
 /// Input schema for remember_pattern tool
@@ -114,10 +113,7 @@ struct ContextArgs {
     limit: Option<i32>,
 }
 
-pub async fn execute_pattern(
-    storage: &Arc<Storage>,
-    args: Option<Value>,
-) -> Result<Value, String> {
+pub async fn execute_pattern(storage: &Arc<Storage>, args: Option<Value>) -> Result<Value, String> {
     let args: PatternArgs = match args {
         Some(v) => serde_json::from_value(v).map_err(|e| format!("Invalid arguments: {}", e))?,
         None => return Err("Missing arguments".to_string()),
@@ -206,7 +202,11 @@ pub async fn execute_decision(
     }
 
     // Build tags
-    let mut tags = vec!["decision".to_string(), "architecture".to_string(), "codebase".to_string()];
+    let mut tags = vec![
+        "decision".to_string(),
+        "architecture".to_string(),
+        "codebase".to_string(),
+    ];
     if let Some(ref codebase) = args.codebase {
         tags.push(format!("codebase:{}", codebase));
     }
@@ -231,10 +231,7 @@ pub async fn execute_decision(
     }))
 }
 
-pub async fn execute_context(
-    storage: &Arc<Storage>,
-    args: Option<Value>,
-) -> Result<Value, String> {
+pub async fn execute_context(storage: &Arc<Storage>, args: Option<Value>) -> Result<Value, String> {
     let args: ContextArgs = args
         .map(serde_json::from_value)
         .transpose()

@@ -65,7 +65,12 @@ fn main() -> anyhow::Result<()> {
         match storage.ingest(input) {
             Ok(_node) => {
                 success_count += 1;
-                println!("[{}/{}] OK: {}", i + 1, total, truncate(&memory.content, 60));
+                println!(
+                    "[{}/{}] OK: {}",
+                    i + 1,
+                    total,
+                    truncate(&memory.content, 60)
+                );
             }
             Err(e) => {
                 println!("[{}/{}] FAIL: {}", i + 1, total, e);
@@ -73,7 +78,10 @@ fn main() -> anyhow::Result<()> {
         }
     }
 
-    println!("\nRestore complete: {}/{} memories restored", success_count, total);
+    println!(
+        "\nRestore complete: {}/{} memories restored",
+        success_count, total
+    );
 
     // Show stats
     let stats = storage.get_stats()?;

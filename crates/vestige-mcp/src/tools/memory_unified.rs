@@ -219,7 +219,6 @@ async fn execute_delete(storage: &Arc<Storage>, id: &str) -> Result<Value, Strin
 
 /// Get accessibility state of a memory (Active/Dormant/Silent/Unavailable)
 async fn execute_state(storage: &Arc<Storage>, id: &str) -> Result<Value, String> {
-
     // Get the memory
     let memory = storage
         .get_node(id)
@@ -270,8 +269,9 @@ async fn execute_promote(
     id: &str,
     reason: Option<String>,
 ) -> Result<Value, String> {
-
-    let before = storage.get_node(id).map_err(|e| e.to_string())?
+    let before = storage
+        .get_node(id)
+        .map_err(|e| e.to_string())?
         .ok_or_else(|| format!("Node not found: {}", id))?;
 
     let node = storage.promote_memory(id).map_err(|e| e.to_string())?;
@@ -325,15 +325,17 @@ async fn execute_demote(
     id: &str,
     reason: Option<String>,
 ) -> Result<Value, String> {
-
-    let before = storage.get_node(id).map_err(|e| e.to_string())?
+    let before = storage
+        .get_node(id)
+        .map_err(|e| e.to_string())?
         .ok_or_else(|| format!("Node not found: {}", id))?;
 
     let node = storage.demote_memory(id).map_err(|e| e.to_string())?;
 
     // Cognitive feedback pipeline
     if let Ok(mut cog) = cognitive.try_lock() {
-        cog.reward_signal.record_outcome(id, OutcomeType::NotHelpful);
+        cog.reward_signal
+            .record_outcome(id, OutcomeType::NotHelpful);
         cog.importance_tracker.on_retrieved(id, false);
         if cog.reconsolidation.is_labile(id) {
             cog.reconsolidation.apply_modification(
@@ -429,22 +431,34 @@ mod tests {
         // Test Active state
         let accessibility = compute_accessibility(0.9, 0.8, 0.7);
         assert!(accessibility >= ACCESSIBILITY_ACTIVE);
-        assert!(matches!(state_from_accessibility(accessibility), MemoryState::Active));
+        assert!(matches!(
+            state_from_accessibility(accessibility),
+            MemoryState::Active
+        ));
 
         // Test Dormant state
         let accessibility = compute_accessibility(0.5, 0.5, 0.5);
-        assert!(accessibility >= ACCESSIBILITY_DORMANT && accessibility < ACCESSIBILITY_ACTIVE);
-        assert!(matches!(state_from_accessibility(accessibility), MemoryState::Dormant));
+        assert!((ACCESSIBILITY_DORMANT..ACCESSIBILITY_ACTIVE).contains(&accessibility));
+        assert!(matches!(
+            state_from_accessibility(accessibility),
+            MemoryState::Dormant
+        ));
 
         // Test Silent state
         let accessibility = compute_accessibility(0.2, 0.2, 0.2);
-        assert!(accessibility >= ACCESSIBILITY_SILENT && accessibility < ACCESSIBILITY_DORMANT);
-        assert!(matches!(state_from_accessibility(accessibility), MemoryState::Silent));
+        assert!((ACCESSIBILITY_SILENT..ACCESSIBILITY_DORMANT).contains(&accessibility));
+        assert!(matches!(
+            state_from_accessibility(accessibility),
+            MemoryState::Silent
+        ));
 
         // Test Unavailable state
         let accessibility = compute_accessibility(0.05, 0.05, 0.05);
         assert!(accessibility < ACCESSIBILITY_SILENT);
-        assert!(matches!(state_from_accessibility(accessibility), MemoryState::Unavailable));
+        assert!(matches!(
+            state_from_accessibility(accessibility),
+            MemoryState::Unavailable
+        ));
     }
 
     #[test]
@@ -538,7 +552,8 @@ mod tests {
     #[tokio::test]
     async fn test_get_nonexistent_memory() {
         let (storage, _dir) = test_storage().await;
-        let args = serde_json::json!({ "action": "get", "id": "00000000-0000-0000-0000-000000000000" });
+        let args =
+            serde_json::json!({ "action": "get", "id": "00000000-0000-0000-0000-000000000000" });
         let result = execute(&storage, &test_cognitive(), Some(args)).await;
         assert!(result.is_ok());
         let value = result.unwrap();
@@ -562,13 +577,17 @@ mod tests {
     async fn test_delete_nonexistent_memory() {
         let (storage, _dir) = test_storage().await;
         // Ingest+delete a throwaway memory to warm writer after WAL migration
-        let warmup_id = storage.ingest(vestige_core::IngestInput {
-            content: "warmup".to_string(),
-            node_type: "fact".to_string(),
-            ..Default::default()
-        }).unwrap().id;
+        let warmup_id = storage
+            .ingest(vestige_core::IngestInput {
+                content: "warmup".to_string(),
+                node_type: "fact".to_string(),
+                ..Default::default()
+            })
+            .unwrap()
+            .id;
         let _ = storage.delete_node(&warmup_id);
-        let args = serde_json::json!({ "action": "delete", "id": "00000000-0000-0000-0000-000000000000" });
+        let args =
+            serde_json::json!({ "action": "delete", "id": "00000000-0000-0000-0000-000000000000" });
         let result = execute(&storage, &test_cognitive(), Some(args)).await;
         assert!(result.is_ok());
         let value = result.unwrap();
@@ -581,7 +600,9 @@ mod tests {
         let (storage, _dir) = test_storage().await;
         let id = ingest_memory(&storage).await;
         let del_args = serde_json::json!({ "action": "delete", "id": id });
-        execute(&storage, &test_cognitive(), Some(del_args)).await.unwrap();
+        execute(&storage, &test_cognitive(), Some(del_args))
+            .await
+            .unwrap();
         let get_args = serde_json::json!({ "action": "get", "id": id });
         let result = execute(&storage, &test_cognitive(), Some(get_args)).await;
         let value = result.unwrap();
@@ -612,7 +633,8 @@ mod tests {
     #[tokio::test]
     async fn test_state_nonexistent_memory_fails() {
         let (storage, _dir) = test_storage().await;
-        let args = serde_json::json!({ "action": "state", "id": "00000000-0000-0000-0000-000000000000" });
+        let args =
+            serde_json::json!({ "action": "state", "id": "00000000-0000-0000-0000-000000000000" });
         let result = execute(&storage, &test_cognitive(), Some(args)).await;
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("not found"));
@@ -629,7 +651,10 @@ mod tests {
     fn test_accessibility_boundary_zero() {
         let a = compute_accessibility(0.0, 0.0, 0.0);
         assert_eq!(a, 0.0);
-        assert!(matches!(state_from_accessibility(a), MemoryState::Unavailable));
+        assert!(matches!(
+            state_from_accessibility(a),
+            MemoryState::Unavailable
+        ));
     }
 
     // ========================================================================
@@ -708,7 +733,8 @@ mod tests {
     #[tokio::test]
     async fn test_demote_nonexistent_node_fails() {
         let (storage, _dir) = test_storage().await;
-        let args = serde_json::json!({ "action": "demote", "id": "00000000-0000-0000-0000-000000000000" });
+        let args =
+            serde_json::json!({ "action": "demote", "id": "00000000-0000-0000-0000-000000000000" });
         let result = execute(&storage, &test_cognitive(), Some(args)).await;
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("Node not found"));
@@ -761,9 +787,24 @@ mod tests {
         assert_eq!(value["success"], true);
         assert_eq!(value["action"], "edit");
         assert_eq!(value["nodeId"], id);
-        assert!(value["oldContentPreview"].as_str().unwrap().contains("Memory unified test content"));
-        assert!(value["newContentPreview"].as_str().unwrap().contains("Updated memory content"));
-        assert!(value["note"].as_str().unwrap().contains("FSRS state preserved"));
+        assert!(
+            value["oldContentPreview"]
+                .as_str()
+                .unwrap()
+                .contains("Memory unified test content")
+        );
+        assert!(
+            value["newContentPreview"]
+                .as_str()
+                .unwrap()
+                .contains("Updated memory content")
+        );
+        assert!(
+            value["note"]
+                .as_str()
+                .unwrap()
+                .contains("FSRS state preserved")
+        );
     }
 
     #[tokio::test]
@@ -780,7 +821,9 @@ mod tests {
             "id": id,
             "content": "Completely new content after edit"
         });
-        execute(&storage, &test_cognitive(), Some(args)).await.unwrap();
+        execute(&storage, &test_cognitive(), Some(args))
+            .await
+            .unwrap();
 
         // Verify FSRS state preserved
         let after = storage.get_node(&id).unwrap().unwrap();

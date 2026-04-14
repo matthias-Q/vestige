@@ -75,19 +75,14 @@ pub fn stats_schema() -> Value {
 }
 
 /// Get the cognitive state of a specific memory
-pub async fn execute_get(
-    storage: &Arc<Storage>,
-    args: Option<Value>,
-) -> Result<Value, String> {
+pub async fn execute_get(storage: &Arc<Storage>, args: Option<Value>) -> Result<Value, String> {
     let args = args.ok_or("Missing arguments")?;
 
-    let memory_id = args["memory_id"]
-        .as_str()
-        .ok_or("memory_id is required")?;
-
+    let memory_id = args["memory_id"].as_str().ok_or("memory_id is required")?;
 
     // Get the memory
-    let memory = storage.get_node(memory_id)
+    let memory = storage
+        .get_node(memory_id)
         .map_err(|e| format!("Error: {}", e))?
         .ok_or("Memory not found")?;
 
@@ -128,19 +123,14 @@ pub async fn execute_get(
 }
 
 /// List memories by state
-pub async fn execute_list(
-    storage: &Arc<Storage>,
-    args: Option<Value>,
-) -> Result<Value, String> {
+pub async fn execute_list(storage: &Arc<Storage>, args: Option<Value>) -> Result<Value, String> {
     let args = args.unwrap_or(serde_json::json!({}));
 
     let state_filter = args["state"].as_str();
     let limit = args["limit"].as_i64().unwrap_or(20) as usize;
 
-
     // Get all memories
-    let memories = storage.get_all_nodes(500, 0)
-        .map_err(|e| e.to_string())?;
+    let memories = storage.get_all_nodes(500, 0).map_err(|e| e.to_string())?;
 
     // Categorize by state
     let mut active = Vec::new();
@@ -199,19 +189,15 @@ pub async fn execute_list(
             "dormant": { "count": dormant.len(), "memories": dormant.into_iter().take(limit).collect::<Vec<_>>() },
             "silent": { "count": silent.len(), "memories": silent.into_iter().take(limit).collect::<Vec<_>>() },
             "unavailable": { "count": unavailable.len(), "memories": unavailable.into_iter().take(limit).collect::<Vec<_>>() }
-        })
+        }),
     };
 
     Ok(result)
 }
 
 /// Get memory state statistics
-pub async fn execute_stats(
-    storage: &Arc<Storage>,
-) -> Result<Value, String> {
-
-    let memories = storage.get_all_nodes(1000, 0)
-        .map_err(|e| e.to_string())?;
+pub async fn execute_stats(storage: &Arc<Storage>) -> Result<Value, String> {
+    let memories = storage.get_all_nodes(1000, 0).map_err(|e| e.to_string())?;
 
     let total = memories.len();
     let mut active_count = 0;
@@ -237,7 +223,11 @@ pub async fn execute_stats(
         }
     }
 
-    let avg_accessibility = if total > 0 { total_accessibility / total as f64 } else { 0.0 };
+    let avg_accessibility = if total > 0 {
+        total_accessibility / total as f64
+    } else {
+        0.0
+    };
 
     Ok(serde_json::json!({
         "totalMemories": total,

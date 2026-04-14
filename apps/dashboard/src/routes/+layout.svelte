@@ -4,7 +4,8 @@
 	import { page } from '$app/stores';
 	import { goto } from '$app/navigation';
 	import { base } from '$app/paths';
-	import { websocket, isConnected, memoryCount, avgRetention } from '$stores/websocket';
+	import { websocket, isConnected, memoryCount, avgRetention, suppressedCount } from '$stores/websocket';
+	import ForgettingIndicator from '$lib/components/ForgettingIndicator.svelte';
 
 	let { children } = $props();
 	let showCommandPalette = $state(false);
@@ -144,6 +145,11 @@
 				<div>{$memoryCount} memories</div>
 				<div>{($avgRetention * 100).toFixed(0)}% retention</div>
 			</div>
+			{#if $suppressedCount > 0}
+				<div class="hidden lg:block pt-1">
+					<ForgettingIndicator />
+				</div>
+			{/if}
 		</div>
 	</nav>
 

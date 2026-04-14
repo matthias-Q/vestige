@@ -57,15 +57,23 @@ pub async fn execute_health(storage: &Arc<Storage>) -> Result<Value, String> {
     let mut warnings = Vec::new();
 
     if stats.average_retention < 0.5 && stats.total_nodes > 0 {
-        warnings.push("Low average retention - consider running consolidation or reviewing memories".to_string());
+        warnings.push(
+            "Low average retention - consider running consolidation or reviewing memories"
+                .to_string(),
+        );
     }
 
     if stats.nodes_due_for_review > 10 {
-        warnings.push(format!("{} memories are due for review", stats.nodes_due_for_review));
+        warnings.push(format!(
+            "{} memories are due for review",
+            stats.nodes_due_for_review
+        ));
     }
 
     if stats.total_nodes > 0 && stats.nodes_with_embeddings == 0 {
-        warnings.push("No embeddings generated - semantic search unavailable. Run consolidation.".to_string());
+        warnings.push(
+            "No embeddings generated - semantic search unavailable. Run consolidation.".to_string(),
+        );
     }
 
     let embedding_coverage = if stats.total_nodes > 0 {
@@ -75,7 +83,10 @@ pub async fn execute_health(storage: &Arc<Storage>) -> Result<Value, String> {
     };
 
     if embedding_coverage < 50.0 && stats.total_nodes > 10 {
-        warnings.push(format!("Only {:.1}% of memories have embeddings", embedding_coverage));
+        warnings.push(format!(
+            "Only {:.1}% of memories have embeddings",
+            embedding_coverage
+        ));
     }
 
     Ok(serde_json::json!({
@@ -90,10 +101,7 @@ pub async fn execute_health(storage: &Arc<Storage>) -> Result<Value, String> {
     }))
 }
 
-fn get_recommendations(
-    stats: &MemoryStats,
-    status: &str,
-) -> Vec<String> {
+fn get_recommendations(stats: &MemoryStats, status: &str) -> Vec<String> {
     let mut recommendations = Vec::new();
 
     if status == "critical" {
@@ -105,11 +113,15 @@ fn get_recommendations(
     }
 
     if stats.nodes_with_embeddings < stats.total_nodes {
-        recommendations.push("Run 'run_consolidation' to generate embeddings for better semantic search.".to_string());
+        recommendations.push(
+            "Run 'run_consolidation' to generate embeddings for better semantic search."
+                .to_string(),
+        );
     }
 
     if stats.total_nodes > 100 && stats.average_retention < 0.7 {
-        recommendations.push("Consider running periodic consolidation to maintain memory health.".to_string());
+        recommendations
+            .push("Consider running periodic consolidation to maintain memory health.".to_string());
     }
 
     if recommendations.is_empty() {

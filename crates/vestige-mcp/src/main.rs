@@ -35,7 +35,7 @@ use std::io;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use tracing::{error, info, warn, Level};
+use tracing::{Level, error, info, warn};
 use tracing_subscriber::EnvFilter;
 
 // Use vestige-core for the cognitive science engine
@@ -82,8 +82,12 @@ fn parse_args() -> Config {
                 println!("    --http-port <PORT>      HTTP transport port (default: 3928)");
                 println!();
                 println!("ENVIRONMENT:");
-                println!("    RUST_LOG                  Log level filter (e.g., debug, info, warn, error)");
-                println!("    VESTIGE_AUTH_TOKEN         Override the bearer token for HTTP transport");
+                println!(
+                    "    RUST_LOG                  Log level filter (e.g., debug, info, warn, error)"
+                );
+                println!(
+                    "    VESTIGE_AUTH_TOKEN         Override the bearer token for HTTP transport"
+                );
                 println!("    VESTIGE_HTTP_PORT          HTTP transport port (default: 3928)");
                 println!("    VESTIGE_DASHBOARD_ENABLED     Enable dashboard (default: disabled)");
                 println!("    VESTIGE_DASHBOARD_PORT     Dashboard port (default: 3927)");
@@ -153,7 +157,11 @@ fn parse_args() -> Config {
         i += 1;
     }
 
-    Config { data_dir, http_port, dashboard_enabled }
+    Config {
+        data_dir,
+        http_port,
+        dashboard_enabled,
+    }
 }
 
 #[tokio::main]
@@ -163,16 +171,16 @@ async fn main() {
 
     // Initialize logging to stderr (stdout is for JSON-RPC)
     tracing_subscriber::fmt()
-        .with_env_filter(
-            EnvFilter::from_default_env()
-                .add_directive(Level::INFO.into())
-        )
+        .with_env_filter(EnvFilter::from_default_env().add_directive(Level::INFO.into()))
         .with_writer(io::stderr)
         .with_target(false)
         .with_ansi(false)
         .init();
 
-    info!("Vestige MCP Server v{} starting...", env!("CARGO_PKG_VERSION"));
+    info!(
+        "Vestige MCP Server v{} starting...",
+        env!("CARGO_PKG_VERSION")
+    );
 
     // Initialize storage with optional custom data directory
     let storage = match Storage::new(config.data_dir) {
@@ -185,7 +193,9 @@ async fn main() {
                 if let Err(e) = s.init_embeddings() {
                     error!("Failed to initialize embedding service: {}", e);
                     error!("Smart ingest will fall back to regular ingest without deduplication");
-                    error!("Hint: Check FASTEMBED_CACHE_PATH or ensure ~/.cache/vestige/fastembed is writable");
+                    error!(
+                        "Hint: Check FASTEMBED_CACHE_PATH or ensure ~/.cache/vestige/fastembed is writable"
+                    );
                 } else {
                     info!("Embedding service initialized successfully");
                 }
@@ -233,7 +243,10 @@ async fn main() {
                         true
                     }
                     Err(e) => {
-                        warn!("Could not read consolidation history: {} — running anyway", e);
+                        warn!(
+                            "Could not read consolidation history: {} — running anyway",
+                            e
+                        );
                         true
                     }
                 };
@@ -255,6 +268,23 @@ async fn main() {
                             warn!("Periodic auto-consolidation failed: {}", e);
                         }
                     }
+
+                    // v2.0.5: Rac1 cascade sweep — walk recently-suppressed
+                    // memories and fade their co-activated neighbors
+                    // (Cervantes-Sandoval & Davis 2020, PMC7477079).
+                    match storage_clone.run_rac1_cascade_sweep() {
+                        Ok((seeds, affected)) if seeds > 0 || affected > 0 => {
+                            info!(
+                                suppressed_seeds = seeds,
+                                neighbors_affected = affected,
+                                "Rac1 cascade sweep complete"
+                            );
+                        }
+                        Ok(_) => {}
+                        Err(e) => {
+                            warn!("Rac1 cascade sweep failed: {}", e);
+                        }
+                    }
                 }
 
                 // Sleep until next check
@@ -273,7 +303,8 @@ async fn main() {
     info!("CognitiveEngine initialized and hydrated");
 
     // Create shared event broadcast channel for dashboard <-> MCP tool events
-    let (event_tx, _) = tokio::sync::broadcast::channel::<vestige_mcp::dashboard::events::VestigeEvent>(1024);
+    let (event_tx, _) =
+        tokio::sync::broadcast::channel::<vestige_mcp::dashboard::events::VestigeEvent>(1024);
 
     // Spawn dashboard HTTP server alongside MCP server (now with CognitiveEngine access)
     if config.dashboard_enabled {
@@ -290,7 +321,9 @@ async fn main() {
                 Some(dashboard_cognitive),
                 dashboard_event_tx,
                 dashboard_port,
-            ).await {
+            )
+            .await
+            {
                 Ok(_state) => {
                     info!("Dashboard started with WebSocket + CognitiveEngine + shared event bus");
                 }
@@ -312,7 +345,8 @@ async fn main() {
 
         match protocol::auth::get_or_create_auth_token() {
             Ok(token) => {
-                let bind = std::env::var("VESTIGE_HTTP_BIND").unwrap_or_else(|_| "127.0.0.1".to_string());
+                let bind =
+                    std::env::var("VESTIGE_HTTP_BIND").unwrap_or_else(|_| "127.0.0.1".to_string());
                 eprintln!("Vestige HTTP transport: http://{}:{}/mcp", bind, http_port);
                 eprintln!("Auth token: {}...", &token[..token.len().min(8)]);
                 tokio::spawn(async move {
@@ -330,7 +364,10 @@ async fn main() {
                 });
             }
             Err(e) => {
-                warn!("Could not create auth token, HTTP transport disabled: {}", e);
+                warn!(
+                    "Could not create auth token, HTTP transport disabled: {}",
+                    e
+                );
             }
         }
     }

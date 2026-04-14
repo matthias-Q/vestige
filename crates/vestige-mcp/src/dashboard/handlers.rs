@@ -38,7 +38,8 @@ pub async fn list_memories(
 
     if let Some(query) = params.q.as_ref().filter(|q| !q.trim().is_empty()) {
         // Use hybrid search
-        let results = state.storage
+        let results = state
+            .storage
             .hybrid_search(query, limit, 0.3, 0.7)
             .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
@@ -76,7 +77,8 @@ pub async fn list_memories(
     }
 
     // No search query — list all memories
-    let mut nodes = state.storage
+    let mut nodes = state
+        .storage
         .get_all_nodes(limit, offset)
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
@@ -121,7 +123,8 @@ pub async fn get_memory(
     State(state): State<AppState>,
     Path(id): Path<String>,
 ) -> Result<Json<Value>, StatusCode> {
-    let node = state.storage
+    let node = state
+        .storage
         .get_node(&id)
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
         .ok_or(StatusCode::NOT_FOUND)?;
@@ -152,7 +155,8 @@ pub async fn delete_memory(
     State(state): State<AppState>,
     Path(id): Path<String>,
 ) -> Result<Json<Value>, StatusCode> {
-    let deleted = state.storage
+    let deleted = state
+        .storage
         .delete_node(&id)
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
@@ -172,7 +176,8 @@ pub async fn promote_memory(
     State(state): State<AppState>,
     Path(id): Path<String>,
 ) -> Result<Json<Value>, StatusCode> {
-    let node = state.storage
+    let node = state
+        .storage
         .promote_memory(&id)
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
@@ -194,7 +199,8 @@ pub async fn demote_memory(
     State(state): State<AppState>,
     Path(id): Path<String>,
 ) -> Result<Json<Value>, StatusCode> {
-    let node = state.storage
+    let node = state
+        .storage
         .demote_memory(&id)
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
@@ -212,10 +218,9 @@ pub async fn demote_memory(
 }
 
 /// Get system stats
-pub async fn get_stats(
-    State(state): State<AppState>,
-) -> Result<Json<Value>, StatusCode> {
-    let stats = state.storage
+pub async fn get_stats(State(state): State<AppState>) -> Result<Json<Value>, StatusCode> {
+    let stats = state
+        .storage
         .get_stats()
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
@@ -254,12 +259,14 @@ pub async fn get_timeline(
     let limit = params.limit.unwrap_or(200).clamp(1, 500);
 
     let start = Utc::now() - Duration::days(days);
-    let nodes = state.storage
+    let nodes = state
+        .storage
         .query_time_range(Some(start), Some(Utc::now()), limit)
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     // Group by day
-    let mut by_day: std::collections::BTreeMap<String, Vec<Value>> = std::collections::BTreeMap::new();
+    let mut by_day: std::collections::BTreeMap<String, Vec<Value>> =
+        std::collections::BTreeMap::new();
     for node in &nodes {
         let date = node.created_at.format("%Y-%m-%d").to_string();
         let content_preview: String = {
@@ -299,10 +306,9 @@ pub async fn get_timeline(
 }
 
 /// Health check
-pub async fn health_check(
-    State(state): State<AppState>,
-) -> Result<Json<Value>, StatusCode> {
-    let stats = state.storage
+pub async fn health_check(State(state): State<AppState>) -> Result<Json<Value>, StatusCode> {
+    let stats = state
+        .storage
         .get_stats()
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
@@ -353,32 +359,38 @@ pub async fn get_graph(
     let center_id = if let Some(ref id) = params.center_id {
         id.clone()
     } else if let Some(ref query) = params.query {
-        let results = state.storage
+        let results = state
+            .storage
             .search(query, 1)
             .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-        results.first()
+        results
+            .first()
             .map(|n| n.id.clone())
             .ok_or(StatusCode::NOT_FOUND)?
     } else {
         // Default: most connected memory (for a rich initial graph)
-        let most_connected = state.storage
+        let most_connected = state
+            .storage
             .get_most_connected_memory()
             .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
         if let Some(id) = most_connected {
             id
         } else {
             // Fallback: most recent memory
-            let recent = state.storage
+            let recent = state
+                .storage
                 .get_all_nodes(1, 0)
                 .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-            recent.first()
+            recent
+                .first()
                 .map(|n| n.id.clone())
                 .ok_or(StatusCode::NOT_FOUND)?
         }
     };
 
     // Get subgraph
-    let (nodes, edges) = state.storage
+    let (nodes, edges) = state
+        .storage
         .get_memory_subgraph(&center_id, depth, max_nodes)
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
@@ -387,7 +399,8 @@ pub async fn get_graph(
     }
 
     // Build nodes JSON with timestamps for recency calculation
-    let nodes_json: Vec<Value> = nodes.iter()
+    let nodes_json: Vec<Value> = nodes
+        .iter()
         .map(|n| {
             let label = if n.content.chars().count() > 80 {
                 format!("{}...", n.content.chars().take(77).collect::<String>())
@@ -407,7 +420,8 @@ pub async fn get_graph(
         })
         .collect();
 
-    let edges_json: Vec<Value> = edges.iter()
+    let edges_json: Vec<Value> = edges
+        .iter()
         .map(|e| {
             serde_json::json!({
                 "source": e.source_id,
@@ -498,10 +512,11 @@ pub async fn search_memories(
 // ============================================================================
 
 /// Trigger a dream cycle via CognitiveEngine
-pub async fn trigger_dream(
-    State(state): State<AppState>,
-) -> Result<Json<Value>, StatusCode> {
-    let cognitive = state.cognitive.as_ref().ok_or(StatusCode::SERVICE_UNAVAILABLE)?;
+pub async fn trigger_dream(State(state): State<AppState>) -> Result<Json<Value>, StatusCode> {
+    let cognitive = state
+        .cognitive
+        .as_ref()
+        .ok_or(StatusCode::SERVICE_UNAVAILABLE)?;
     let start = std::time::Instant::now();
     let memory_count: usize = 50;
 
@@ -715,9 +730,7 @@ pub async fn explore_connections(
 }
 
 /// Predict which memories will be needed
-pub async fn predict_memories(
-    State(state): State<AppState>,
-) -> Result<Json<Value>, StatusCode> {
+pub async fn predict_memories(State(state): State<AppState>) -> Result<Json<Value>, StatusCode> {
     // Get recent memories as predictions based on activity
     let recent = state
         .storage
@@ -756,7 +769,9 @@ pub async fn score_importance(
     if let Some(ref cognitive) = state.cognitive {
         let context = vestige_core::ImportanceContext::current();
         let cog = cognitive.lock().await;
-        let score = cog.importance_signals.compute_importance(&req.content, &context);
+        let score = cog
+            .importance_signals
+            .compute_importance(&req.content, &context);
         drop(cog);
 
         let composite = score.composite;
@@ -789,7 +804,11 @@ pub async fn score_importance(
         // Fallback: basic heuristic scoring
         let word_count = req.content.split_whitespace().count();
         let has_code = req.content.contains("```") || req.content.contains("fn ");
-        let composite = if has_code { 0.7 } else { (word_count as f64 / 100.0).min(0.8) };
+        let composite = if has_code {
+            0.7
+        } else {
+            (word_count as f64 / 100.0).min(0.8)
+        };
 
         Ok(Json(serde_json::json!({
             "composite": composite,
@@ -907,17 +926,35 @@ pub async fn list_intentions(
 
     let intentions = if status_filter == "all" {
         // Get all statuses
-        let mut all = state.storage.get_active_intentions()
-            .unwrap_or_default();
-        all.extend(state.storage.get_intentions_by_status("fulfilled").unwrap_or_default());
-        all.extend(state.storage.get_intentions_by_status("cancelled").unwrap_or_default());
-        all.extend(state.storage.get_intentions_by_status("snoozed").unwrap_or_default());
+        let mut all = state.storage.get_active_intentions().unwrap_or_default();
+        all.extend(
+            state
+                .storage
+                .get_intentions_by_status("fulfilled")
+                .unwrap_or_default(),
+        );
+        all.extend(
+            state
+                .storage
+                .get_intentions_by_status("cancelled")
+                .unwrap_or_default(),
+        );
+        all.extend(
+            state
+                .storage
+                .get_intentions_by_status("snoozed")
+                .unwrap_or_default(),
+        );
         all
     } else if status_filter == "active" {
-        state.storage.get_active_intentions()
+        state
+            .storage
+            .get_active_intentions()
             .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
     } else {
-        state.storage.get_intentions_by_status(&status_filter)
+        state
+            .storage
+            .get_intentions_by_status(&status_filter)
             .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
     };
 

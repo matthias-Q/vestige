@@ -44,10 +44,7 @@ struct RecallArgs {
     min_retention: Option<f64>,
 }
 
-pub async fn execute(
-    storage: &Arc<Storage>,
-    args: Option<Value>,
-) -> Result<Value, String> {
+pub async fn execute(storage: &Arc<Storage>, args: Option<Value>) -> Result<Value, String> {
     let args: RecallArgs = match args {
         Some(v) => serde_json::from_value(v).map_err(|e| format!("Invalid arguments: {}", e))?,
         None => return Err("Missing arguments".to_string()),
@@ -101,8 +98,8 @@ pub async fn execute(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use vestige_core::IngestInput;
     use tempfile::TempDir;
+    use vestige_core::IngestInput;
 
     /// Create a test storage instance with a temporary database
     async fn test_storage() -> (Arc<Storage>, TempDir) {
@@ -266,7 +263,8 @@ mod tests {
     #[tokio::test]
     async fn test_recall_returns_matching_content() {
         let (storage, _dir) = test_storage().await;
-        let node_id = ingest_test_content(&storage, "Python is a dynamic programming language.").await;
+        let node_id =
+            ingest_test_content(&storage, "Python is a dynamic programming language.").await;
 
         let args = serde_json::json!({ "query": "python" });
         let result = execute(&storage, Some(args)).await;
@@ -370,7 +368,12 @@ mod tests {
         let schema_value = schema();
         assert_eq!(schema_value["type"], "object");
         assert!(schema_value["properties"]["query"].is_object());
-        assert!(schema_value["required"].as_array().unwrap().contains(&serde_json::json!("query")));
+        assert!(
+            schema_value["required"]
+                .as_array()
+                .unwrap()
+                .contains(&serde_json::json!("query"))
+        );
     }
 
     #[test]

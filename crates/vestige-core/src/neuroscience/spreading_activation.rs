@@ -57,7 +57,6 @@ pub enum LinkType {
     UserDefined,
 }
 
-
 // ============================================================================
 // ASSOCIATION EDGE
 // ============================================================================
@@ -271,13 +270,7 @@ impl ActivationNetwork {
     }
 
     /// Add an edge between two nodes
-    pub fn add_edge(
-        &mut self,
-        source: String,
-        target: String,
-        link_type: LinkType,
-        strength: f64,
-    ) {
+    pub fn add_edge(&mut self, source: String, target: String, link_type: LinkType, strength: f64) {
         // Ensure both nodes exist
         self.add_node(source.clone());
         self.add_node(target.clone());
@@ -288,9 +281,10 @@ impl ActivationNetwork {
 
         // Update node's edge list
         if let Some(node) = self.nodes.get_mut(&source)
-            && !node.edges.contains(&target) {
-                node.edges.push(target);
-            }
+            && !node.edges.contains(&target)
+        {
+            node.edges.push(target);
+        }
     }
 
     /// Activate a node and spread activation through the network
@@ -314,9 +308,10 @@ impl ActivationNetwork {
         while let Some((current_id, current_activation, hops, path)) = queue.pop() {
             // Skip if we've visited this node with higher activation
             if let Some(&prev_activation) = visited.get(&current_id)
-                && prev_activation >= current_activation {
-                    continue;
-                }
+                && prev_activation >= current_activation
+            {
+                continue;
+            }
             visited.insert(current_id.clone(), current_activation);
 
             // Check hop limit
@@ -499,7 +494,7 @@ mod tests {
     #[test]
     fn test_activation_threshold() {
         let mut network = ActivationNetwork::with_config(ActivationConfig {
-            decay_factor: 0.1, // Very high decay
+            decay_factor: 0.1,  // Very high decay
             min_threshold: 0.5, // High threshold
             ..Default::default()
         });

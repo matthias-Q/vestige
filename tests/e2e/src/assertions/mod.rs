@@ -271,16 +271,11 @@ macro_rules! assert_search_count {
 #[macro_export]
 macro_rules! assert_search_order {
     ($results:expr, $expected_first:expr) => {
-        assert!(
-            !$results.is_empty(),
-            "Expected non-empty search results"
-        );
+        assert!(!$results.is_empty(), "Expected non-empty search results");
         assert_eq!(
-            $results[0].id,
-            $expected_first,
+            $results[0].id, $expected_first,
             "Expected first result to be {}, got {}",
-            $expected_first,
-            $results[0].id
+            $expected_first, $results[0].id
         );
     };
 }

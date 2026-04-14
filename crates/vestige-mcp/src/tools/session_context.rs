@@ -110,7 +110,9 @@ pub async fn execute(
     let include_status = args.include_status.unwrap_or(true);
     let include_intentions = args.include_intentions.unwrap_or(true);
     let include_predictions = args.include_predictions.unwrap_or(true);
-    let queries = args.queries.unwrap_or_else(|| vec!["user preferences".to_string()]);
+    let queries = args
+        .queries
+        .unwrap_or_else(|| vec!["user preferences".to_string()]);
 
     let mut context_parts: Vec<String> = Vec::new();
     let mut expandable_ids: Vec<String> = Vec::new();
@@ -275,34 +277,33 @@ pub async fn execute(
     if include_predictions {
         let cog = cognitive.lock().await;
 
-        let session_ctx = vestige_core::neuroscience::predictive_retrieval::SessionContext {
-            started_at: Utc::now(),
-            current_focus: args
-                .context
-                .as_ref()
-                .and_then(|c| c.topics.as_ref())
-                .and_then(|t| t.first())
-                .cloned(),
-            active_files: args
-                .context
-                .as_ref()
-                .and_then(|c| c.file.as_ref())
-                .map(|f| vec![f.clone()])
-                .unwrap_or_default(),
-            accessed_memories: Vec::new(),
-            recent_queries: Vec::new(),
-            detected_intent: None,
-            project_context: args
-                .context
-                .as_ref()
-                .and_then(|c| c.codebase.as_ref())
-                .map(|name| vestige_core::neuroscience::predictive_retrieval::ProjectContext {
-                    name: name.to_string(),
-                    path: String::new(),
-                    technologies: Vec::new(),
-                    primary_language: None,
-                }),
-        };
+        let session_ctx =
+            vestige_core::neuroscience::predictive_retrieval::SessionContext {
+                started_at: Utc::now(),
+                current_focus: args
+                    .context
+                    .as_ref()
+                    .and_then(|c| c.topics.as_ref())
+                    .and_then(|t| t.first())
+                    .cloned(),
+                active_files: args
+                    .context
+                    .as_ref()
+                    .and_then(|c| c.file.as_ref())
+                    .map(|f| vec![f.clone()])
+                    .unwrap_or_default(),
+                accessed_memories: Vec::new(),
+                recent_queries: Vec::new(),
+                detected_intent: None,
+                project_context: args.context.as_ref().and_then(|c| c.codebase.as_ref()).map(
+                    |name| vestige_core::neuroscience::predictive_retrieval::ProjectContext {
+                        name: name.to_string(),
+                        path: String::new(),
+                        technologies: Vec::new(),
+                        primary_language: None,
+                    },
+                ),
+            };
 
         let predictions = cog
             .predictive_memory
@@ -335,40 +336,44 @@ pub async fn execute(
     // 5. Codebase patterns/decisions (if codebase specified)
     // ====================================================================
     if let Some(ref ctx) = args.context
-        && let Some(ref codebase) = ctx.codebase {
-            let codebase_tag = format!("codebase:{}", codebase);
-            let mut cb_lines: Vec<String> = Vec::new();
+        && let Some(ref codebase) = ctx.codebase
+    {
+        let codebase_tag = format!("codebase:{}", codebase);
+        let mut cb_lines: Vec<String> = Vec::new();
 
-            // Get patterns
-            if let Ok(patterns) = storage.get_nodes_by_type_and_tag("pattern", Some(&codebase_tag), 3) {
-                for p in &patterns {
-                    let line = format!("- [pattern] {}", first_sentence(&p.content));
-                    let line_len = line.len() + 1;
-                    if char_count + line_len <= budget_chars {
-                        cb_lines.push(line);
-                        char_count += line_len;
-                    }
+        // Get patterns
+        if let Ok(patterns) = storage.get_nodes_by_type_and_tag("pattern", Some(&codebase_tag), 3) {
+            for p in &patterns {
+                let line = format!("- [pattern] {}", first_sentence(&p.content));
+                let line_len = line.len() + 1;
+                if char_count + line_len <= budget_chars {
+                    cb_lines.push(line);
+                    char_count += line_len;
                 }
-            }
-
-            // Get decisions
-            if let Ok(decisions) =
-                storage.get_nodes_by_type_and_tag("decision", Some(&codebase_tag), 3)
-            {
-                for d in &decisions {
-                    let line = format!("- [decision] {}", first_sentence(&d.content));
-                    let line_len = line.len() + 1;
-                    if char_count + line_len <= budget_chars {
-                        cb_lines.push(line);
-                        char_count += line_len;
-                    }
-                }
-            }
-
-            if !cb_lines.is_empty() {
-                context_parts.push(format!("**Codebase ({}):**\n{}", codebase, cb_lines.join("\n")));
             }
         }
+
+        // Get decisions
+        if let Ok(decisions) = storage.get_nodes_by_type_and_tag("decision", Some(&codebase_tag), 3)
+        {
+            for d in &decisions {
+                let line = format!("- [decision] {}", first_sentence(&d.content));
+                let line_len = line.len() + 1;
+                if char_count + line_len <= budget_chars {
+                    cb_lines.push(line);
+                    char_count += line_len;
+                }
+            }
+        }
+
+        if !cb_lines.is_empty() {
+            context_parts.push(format!(
+                "**Codebase ({}):**\n{}",
+                codebase,
+                cb_lines.join("\n")
+            ));
+        }
+    }
 
     // ====================================================================
     // 6. Assemble final response
@@ -405,9 +410,10 @@ fn check_intention_triggered(
     match trigger.trigger_type.as_deref() {
         Some("time") => {
             if let Some(ref at) = trigger.at
-                && let Ok(trigger_time) = DateTime::parse_from_rfc3339(at) {
-                    return trigger_time.with_timezone(&Utc) <= now;
-                }
+                && let Ok(trigger_time) = DateTime::parse_from_rfc3339(at)
+            {
+                return trigger_time.with_timezone(&Utc) <= now;
+            }
             if let Some(mins) = trigger.in_minutes {
                 let trigger_time = intention.created_at + Duration::minutes(mins);
                 return trigger_time <= now;
@@ -420,22 +426,23 @@ fn check_intention_triggered(
                 && current_cb
                     .to_lowercase()
                     .contains(&trigger_cb.to_lowercase())
-                {
-                    return true;
-                }
+            {
+                return true;
+            }
             // Check file pattern match
             if let (Some(pattern), Some(file)) = (&trigger.file_pattern, &ctx.file)
-                && file.contains(pattern.as_str()) {
-                    return true;
-                }
+                && file.contains(pattern.as_str())
+            {
+                return true;
+            }
             // Check topic match
             if let (Some(topic), Some(topics)) = (&trigger.topic, &ctx.topics)
                 && topics
                     .iter()
                     .any(|t| t.to_lowercase().contains(&topic.to_lowercase()))
-                {
-                    return true;
-                }
+            {
+                return true;
+            }
             false
         }
         _ => false,
@@ -537,7 +544,12 @@ mod tests {
     #[tokio::test]
     async fn test_with_queries() {
         let (storage, _dir) = test_storage().await;
-        ingest_test_content(&storage, "Sam prefers Rust and TypeScript for all projects.", vec![]).await;
+        ingest_test_content(
+            &storage,
+            "Sam prefers Rust and TypeScript for all projects.",
+            vec![],
+        )
+        .await;
 
         let args = serde_json::json!({
             "queries": ["Sam preferences", "project context"]
@@ -574,12 +586,16 @@ mod tests {
         assert!(result.is_ok());
 
         let value = result.unwrap();
-        let ctx = value["context"].as_str().unwrap();
+        assert!(value["context"].is_string());
         // Context should be within budget (200 tokens * 4 = 800 chars + header overhead)
         // The actual char count of context should be reasonable
         let tokens_used = value["tokensUsed"].as_u64().unwrap();
         // Allow some overhead for the header
-        assert!(tokens_used <= 300, "tokens_used {} should be near budget 200", tokens_used);
+        assert!(
+            tokens_used <= 300,
+            "tokens_used {} should be near budget 200",
+            tokens_used
+        );
     }
 
     #[tokio::test]
@@ -649,7 +665,8 @@ mod tests {
         let (storage, _dir) = test_storage().await;
         // Ingest a pattern with codebase tag
         let input = IngestInput {
-            content: "Code pattern: Use Arc<Mutex<>> for shared state in async contexts.".to_string(),
+            content: "Code pattern: Use Arc<Mutex<>> for shared state in async contexts."
+                .to_string(),
             node_type: "pattern".to_string(),
             source: None,
             sentiment_score: 0.0,
@@ -681,7 +698,10 @@ mod tests {
 
     #[test]
     fn test_first_sentence_period() {
-        assert_eq!(first_sentence("Hello world. More text here."), "Hello world.");
+        assert_eq!(
+            first_sentence("Hello world. More text here."),
+            "Hello world."
+        );
     }
 
     #[test]

@@ -282,10 +282,16 @@ export class MeshBasicMaterial extends BaseMaterial {
 }
 
 export class LineBasicMaterial extends BaseMaterial {
+	depthWrite = true;
 	constructor(params?: Record<string, unknown>) {
 		super();
 		if (params) {
 			if (typeof params.opacity === 'number') this.opacity = params.opacity;
+			if (typeof params.transparent === 'boolean') this.transparent = params.transparent;
+			if (params.color instanceof Color) this.color = params.color;
+			else if (typeof params.color === 'number') this.color = new Color(params.color);
+			if (typeof params.blending === 'number') this.blending = params.blending;
+			if (typeof params.depthWrite === 'boolean') this.depthWrite = params.depthWrite;
 		}
 	}
 }
@@ -303,10 +309,19 @@ export class PointsMaterial extends BaseMaterial {
 }
 
 export class SpriteMaterial extends BaseMaterial {
+	depthWrite = true;
 	constructor(params?: Record<string, unknown>) {
 		super();
 		if (params) {
 			if (typeof params.opacity === 'number') this.opacity = params.opacity;
+			if (typeof params.transparent === 'boolean') this.transparent = params.transparent;
+			if (params.color instanceof Color) this.color = params.color;
+			else if (typeof params.color === 'number') this.color = new Color(params.color);
+			if (typeof params.blending === 'number') this.blending = params.blending;
+			if (typeof params.depthWrite === 'boolean') this.depthWrite = params.depthWrite;
+			if (params.map && typeof params.map === 'object') {
+				this.map = params.map as { dispose: () => void };
+			}
 		}
 	}
 }

@@ -7,7 +7,6 @@ use serde::Deserialize;
 use serde_json::Value;
 use std::sync::Arc;
 
-
 use vestige_core::{IngestInput, Storage};
 
 /// Input schema for session_checkpoint tool
@@ -63,10 +62,7 @@ struct CheckpointItem {
     source: Option<String>,
 }
 
-pub async fn execute(
-    storage: &Arc<Storage>,
-    args: Option<Value>,
-) -> Result<Value, String> {
+pub async fn execute(storage: &Arc<Storage>, args: Option<Value>) -> Result<Value, String> {
     let args: CheckpointArgs = match args {
         Some(v) => serde_json::from_value(v).map_err(|e| format!("Invalid arguments: {}", e))?,
         None => return Err("Missing arguments".to_string()),

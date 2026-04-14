@@ -84,7 +84,9 @@ pub async fn execute(
     if let Ok(cog) = cognitive.try_lock() {
         // Full 4-channel importance scoring
         let context = ImportanceContext::current();
-        let importance = cog.importance_signals.compute_importance(&args.content, &context);
+        let importance = cog
+            .importance_signals
+            .compute_importance(&args.content, &context);
         importance_composite = importance.composite;
 
         // Standalone novelty check (dopaminergic signal)
@@ -136,7 +138,13 @@ pub async fn execute(
                 let node_type = result.node.node_type.clone();
                 let has_embedding = result.node.has_embedding.unwrap_or(false);
 
-                run_post_ingest(cognitive, &node_id, &node_content, &node_type, importance_composite);
+                run_post_ingest(
+                    cognitive,
+                    &node_id,
+                    &node_content,
+                    &node_type,
+                    importance_composite,
+                );
 
                 Ok(serde_json::json!({
                     "success": true,
@@ -157,7 +165,13 @@ pub async fn execute(
                 let node_type = node.node_type.clone();
                 let has_embedding = node.has_embedding.unwrap_or(false);
 
-                run_post_ingest(cognitive, &node_id, &node_content, &node_type, importance_composite);
+                run_post_ingest(
+                    cognitive,
+                    &node_id,
+                    &node_content,
+                    &node_type,
+                    importance_composite,
+                );
 
                 Ok(serde_json::json!({
                     "success": true,
@@ -181,7 +195,13 @@ pub async fn execute(
         let node_type = node.node_type.clone();
         let has_embedding = node.has_embedding.unwrap_or(false);
 
-        run_post_ingest(cognitive, &node_id, &node_content, &node_type, importance_composite);
+        run_post_ingest(
+            cognitive,
+            &node_id,
+            &node_content,
+            &node_type,
+            importance_composite,
+        );
 
         Ok(serde_json::json!({
             "success": true,
@@ -217,16 +237,13 @@ fn run_post_ingest(
         cog.importance_signals.learn_content(content);
 
         // Record in hippocampal index
-        let _ = cog.hippocampal_index.index_memory(
-            node_id,
-            content,
-            node_type,
-            Utc::now(),
-            None,
-        );
+        let _ = cog
+            .hippocampal_index
+            .index_memory(node_id, content, node_type, Utc::now(), None);
 
         // Cross-project pattern recording
-        cog.cross_project.record_project_memory(node_id, "default", None);
+        cog.cross_project
+            .record_project_memory(node_id, "default", None);
     }
 }
 
@@ -421,7 +438,12 @@ mod tests {
         let schema_value = schema();
         assert_eq!(schema_value["type"], "object");
         assert!(schema_value["properties"]["content"].is_object());
-        assert!(schema_value["required"].as_array().unwrap().contains(&serde_json::json!("content")));
+        assert!(
+            schema_value["required"]
+                .as_array()
+                .unwrap()
+                .contains(&serde_json::json!("content"))
+        );
     }
 
     #[test]

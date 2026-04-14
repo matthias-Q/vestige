@@ -5,6 +5,68 @@ All notable changes to Vestige will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.5] - 2026-04-14 — "Intentional Amnesia"
+
+Every AI memory system stores too much. Vestige now treats forgetting as a first-class, neuroscientifically-grounded primitive. This release adds **active forgetting** — top-down inhibitory control over memory retrieval, based on two 2025 papers that no other AI memory system has implemented.
+
+### Scientific grounding
+
+- **Anderson, M. C., Hanslmayr, S., & Quaegebeur, L. (2025).** *"Brain mechanisms underlying the inhibitory control of thought."* Nature Reviews Neuroscience. DOI: [10.1038/s41583-025-00929-y](https://www.nature.com/articles/s41583-025-00929-y). Establishes the right lateral PFC as the domain-general inhibitory controller, and Suppression-Induced Forgetting (SIF) as compounding with each stopping attempt.
+- **Cervantes-Sandoval, I., Chakraborty, M., MacMullen, C., & Davis, R. L. (2020).** *"Rac1 Impairs Forgetting-Induced Cellular Plasticity in Mushroom Body Output Neurons."* Front Cell Neurosci. [PMC7477079](https://pmc.ncbi.nlm.nih.gov/articles/PMC7477079/). Establishes Rac1 GTPase as the active synaptic destabilization mechanism — forgetting is a biological PROCESS, not passive decay.
+
+### Added
+
+#### `suppress` MCP Tool (NEW — Tool #24)
+- **Top-down memory suppression.** Distinct from `memory.delete` (which removes) and `memory.demote` (which is a one-shot hit). Each `suppress` call compounds: `suppression_count` increments, and a `k × suppression_count` penalty (saturating at 80%) is subtracted from retrieval scores during hybrid search.
+- **Rac1 cascade.** Background worker piggybacks the existing consolidation loop, walks `memory_connections` edges from recently-suppressed seeds, and applies attenuated FSRS decay to co-activated neighbors. You don't just forget "Jake" — you fade the café, the roommate, the birthday.
+- **Reversible 24h labile window** — matches Nader reconsolidation semantics on a 24-hour axis. Pass `reverse: true` within 24h to undo. After that, it locks in.
+- **Never deletes** — the memory persists and is still accessible via `memory.get(id)`. It's INHIBITED, not erased.
+
+#### `active_forgetting` Cognitive Module (NEW — #30)
+- `crates/vestige-core/src/neuroscience/active_forgetting.rs` — stateless helper for SIF penalty computation, labile window tracking, and Rac1 cascade factors.
+- 7 unit tests + 9 integration tests = 16 new tests.
+
+#### Migration V10
+- `ALTER TABLE knowledge_nodes ADD COLUMN suppression_count INTEGER DEFAULT 0`
+- `ALTER TABLE knowledge_nodes ADD COLUMN suppressed_at TEXT`
+- Partial indices on both columns for efficient sweep queries.
+- Additive-only — backward compatible with all existing v2.0.x databases.
+
+#### Dashboard
+- `ForgettingIndicator.svelte` — new status pill that pulses when suppressed memories exist.
+- 3D graph nodes dim to 20% opacity and lose emissive glow when suppressed.
+- New WebSocket events: `MemorySuppressed`, `MemoryUnsuppressed`, `Rac1CascadeSwept`.
+- `Heartbeat` event now carries `suppressed_count` for live dashboard display.
+
+### Changed
+
+- `search` scoring pipeline now includes an SIF penalty applied after the accessibility filter.
+- Consolidation worker (`VESTIGE_CONSOLIDATION_INTERVAL_HOURS`, default 6h) now runs `run_rac1_cascade_sweep` after each `run_consolidation` call.
+- Tool count assertion bumped from 23 → 24.
+- Workspace version bumped 2.0.4 → 2.0.5.
+
+### Tests
+
+- Rust: 1,284 passing (up from 1,237). Net +47 new tests for active forgetting, Rac1 cascade, migration V10.
+- Dashboard (Vitest): 171 passing (up from 150). +21 regression tests locking in the issue #31 UI fix.
+- Zero warnings, clippy clean across all targets.
+
+### Fixed
+
+- **Dashboard graph view rendered glowing squares instead of round halos** ([#31](https://github.com/samvallad33/vestige/issues/31)). Root cause: the node glow `THREE.SpriteMaterial` had no `map` set, so `Sprite` rendered as a solid-coloured 1×1 plane; additive blending plus `UnrealBloomPass(strength=0.8, radius=0.4, threshold=0.85)` then amplified the square edges into hard-edged glowing cubes. The aggressive `FogExp2(..., 0.008)` swallowed edges at depth and dark-navy `0x4a4a7a` lines were invisible against the fog. Fix bundled:
+  - Generated a shared 128×128 radial-gradient `CanvasTexture` (module-level singleton) and assigned it as `SpriteMaterial.map`. Gradient stops: `rgba(255,255,255,1.0) → rgba(255,255,255,0.7) → rgba(255,255,255,0.2) → rgba(255,255,255,0.0)`. Sprite now reads as a soft round halo; bloom diffuses cleanly.
+  - Retuned `UnrealBloomPass` to `(strength=0.55, radius=0.6, threshold=0.2)` — gentler, allows mid-tones to bloom instead of only blown-out highlights.
+  - Halved fog density `FogExp2(0x050510, 0.008) → FogExp2(0x0a0a1a, 0.0035)` so distant memories stay visible.
+  - Bumped edge color `0x4a4a7a → 0x8b5cf6` (brand violet). Opacity `0.1 + weight*0.5 → 0.25 + weight*0.5`, cap `0.6 → 0.8`. Added `depthWrite: false` so edges blend cleanly through fog.
+  - Added explicit `scene.background = 0x05050f` and a 2000-point starfield distributed on a spherical shell at radius 600–1000, additive-blended with subtle cool-white/violet vertex colors.
+  - Glow sprite scale bumped `size × 4 → size × 6` so the gradient has visible screen footprint.
+  - All node glow sprites share a single `CanvasTexture` instance (singleton cache — memory leak guard for large graphs).
+  - 21 regression tests added in `apps/dashboard/src/lib/graph/__tests__/ui-fixes.test.ts`. Hybrid strategy: runtime unit tests via the existing `three-mock.ts` (extended to propagate `map`/`color`/`depthWrite`/`blending` params and added `createRadialGradient` to the canvas context mock), plus source-level regex assertions on `scene.ts` and `nodes.ts` magic numbers so any accidental revert of fog/bloom/color/helper fails the suite immediately.
+- `apps/dashboard/package.json` version stale at 2.0.3 — bumped to 2.0.5 to match the workspace.
+- `packages/vestige-mcp-npm/.gitignore` missing `bin/vestige-restore` and `bin/vestige-restore.exe` entries — the other three binaries were already ignored as postinstall downloads.
+
+---
+
 ## [2.0.4] - 2026-04-09 — "Deep Reference"
 
 Context windows hit 1M tokens. Memory matters more than ever. This release removes artificial limits, adds contradiction detection, and hardens security.

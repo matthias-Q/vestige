@@ -7,7 +7,6 @@ use chrono::Utc;
 use serde_json::Value;
 use std::sync::Arc;
 
-
 use vestige_core::{RecallInput, SearchMode, Storage};
 
 /// Input schema for match_context tool
@@ -50,19 +49,18 @@ pub fn schema() -> Value {
     })
 }
 
-pub async fn execute(
-    storage: &Arc<Storage>,
-    args: Option<Value>,
-) -> Result<Value, String> {
+pub async fn execute(storage: &Arc<Storage>, args: Option<Value>) -> Result<Value, String> {
     let args = args.ok_or("Missing arguments")?;
 
-    let query = args["query"]
-        .as_str()
-        .ok_or("query is required")?;
+    let query = args["query"].as_str().ok_or("query is required")?;
 
     let topics: Vec<String> = args["topics"]
         .as_array()
-        .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(String::from))
+                .collect()
+        })
         .unwrap_or_default();
 
     let project = args["project"].as_str().map(String::from);
@@ -83,11 +81,11 @@ pub async fn execute(
         search_mode: SearchMode::Hybrid,
         valid_at: None,
     };
-    let candidates = storage.recall(recall_input)
-        .map_err(|e| e.to_string())?;
+    let candidates = storage.recall(recall_input).map_err(|e| e.to_string())?;
 
     // Score by context match (simplified implementation)
-    let mut scored_results: Vec<_> = candidates.into_iter()
+    let mut scored_results: Vec<_> = candidates
+        .into_iter()
         .map(|mem| {
             // Calculate context score based on:
             // 1. Temporal proximity (how recent)
@@ -98,8 +96,14 @@ pub async fn execute(
             let tag_overlap = if topics.is_empty() {
                 0.5 // Neutral if no topics specified
             } else {
-                let matching = mem.tags.iter()
-                    .filter(|t| topics.iter().any(|topic| topic.to_lowercase().contains(&t.to_lowercase())))
+                let matching = mem
+                    .tags
+                    .iter()
+                    .filter(|t| {
+                        topics
+                            .iter()
+                            .any(|topic| topic.to_lowercase().contains(&t.to_lowercase()))
+                    })
                     .count();
                 matching as f64 / topics.len().max(1) as f64
             };
@@ -136,7 +140,8 @@ pub async fn execute(
     scored_results.sort_by(|a, b| b.2.partial_cmp(&a.2).unwrap_or(std::cmp::Ordering::Equal));
     scored_results.truncate(limit as usize);
 
-    let results: Vec<Value> = scored_results.into_iter()
+    let results: Vec<Value> = scored_results
+        .into_iter()
         .map(|(mem, ctx_score, combined)| {
             serde_json::json!({
                 "id": mem.id,

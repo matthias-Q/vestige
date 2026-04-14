@@ -42,10 +42,7 @@ struct KnowledgeArgs {
     id: String,
 }
 
-pub async fn execute_get(
-    storage: &Arc<Storage>,
-    args: Option<Value>,
-) -> Result<Value, String> {
+pub async fn execute_get(storage: &Arc<Storage>, args: Option<Value>) -> Result<Value, String> {
     let args: KnowledgeArgs = match args {
         Some(v) => serde_json::from_value(v).map_err(|e| format!("Invalid arguments: {}", e))?,
         None => return Err("Missing arguments".to_string()),
@@ -90,10 +87,7 @@ pub async fn execute_get(
     }
 }
 
-pub async fn execute_delete(
-    storage: &Arc<Storage>,
-    args: Option<Value>,
-) -> Result<Value, String> {
+pub async fn execute_delete(storage: &Arc<Storage>, args: Option<Value>) -> Result<Value, String> {
     let args: KnowledgeArgs = match args {
         Some(v) => serde_json::from_value(v).map_err(|e| format!("Invalid arguments: {}", e))?,
         None => return Err("Missing arguments".to_string()),

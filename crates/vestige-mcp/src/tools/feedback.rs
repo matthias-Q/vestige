@@ -73,19 +73,23 @@ pub async fn execute_promote(
     // Validate UUID
     uuid::Uuid::parse_str(&args.id).map_err(|_| "Invalid node ID format".to_string())?;
 
-
     // Get node before for comparison
-    let before = storage.get_node(&args.id).map_err(|e| e.to_string())?
+    let before = storage
+        .get_node(&args.id)
+        .map_err(|e| e.to_string())?
         .ok_or_else(|| format!("Node not found: {}", args.id))?;
 
-    let node = storage.promote_memory(&args.id).map_err(|e| e.to_string())?;
+    let node = storage
+        .promote_memory(&args.id)
+        .map_err(|e| e.to_string())?;
 
     // ====================================================================
     // COGNITIVE FEEDBACK PIPELINE (promote)
     // ====================================================================
     if let Ok(mut cog) = cognitive.try_lock() {
         // 5A. Reward signal — record positive outcome
-        cog.reward_signal.record_outcome(&args.id, OutcomeType::Helpful);
+        cog.reward_signal
+            .record_outcome(&args.id, OutcomeType::Helpful);
 
         // 5B. Importance tracking — mark as helpful retrieval
         cog.importance_tracker.on_retrieved(&args.id, true);
@@ -143,9 +147,10 @@ pub async fn execute_demote(
     // Validate UUID
     uuid::Uuid::parse_str(&args.id).map_err(|_| "Invalid node ID format".to_string())?;
 
-
     // Get node before for comparison
-    let before = storage.get_node(&args.id).map_err(|e| e.to_string())?
+    let before = storage
+        .get_node(&args.id)
+        .map_err(|e| e.to_string())?
         .ok_or_else(|| format!("Node not found: {}", args.id))?;
 
     let node = storage.demote_memory(&args.id).map_err(|e| e.to_string())?;
@@ -155,7 +160,8 @@ pub async fn execute_demote(
     // ====================================================================
     if let Ok(mut cog) = cognitive.try_lock() {
         // 5A. Reward signal — record negative outcome
-        cog.reward_signal.record_outcome(&args.id, OutcomeType::NotHelpful);
+        cog.reward_signal
+            .record_outcome(&args.id, OutcomeType::NotHelpful);
 
         // 5B. Importance tracking — mark as unhelpful retrieval
         cog.importance_tracker.on_retrieved(&args.id, false);
@@ -237,8 +243,9 @@ pub async fn execute_request_feedback(
     // Validate UUID
     uuid::Uuid::parse_str(&args.id).map_err(|_| "Invalid node ID format".to_string())?;
 
-
-    let node = storage.get_node(&args.id).map_err(|e| e.to_string())?
+    let node = storage
+        .get_node(&args.id)
+        .map_err(|e| e.to_string())?
         .ok_or_else(|| format!("Node not found: {}", args.id))?;
 
     // Truncate content for display
@@ -319,10 +326,12 @@ mod tests {
         assert_eq!(schema["type"], "object");
         assert!(schema["properties"]["id"].is_object());
         assert!(schema["properties"]["reason"].is_object());
-        assert!(schema["required"]
-            .as_array()
-            .unwrap()
-            .contains(&serde_json::json!("id")));
+        assert!(
+            schema["required"]
+                .as_array()
+                .unwrap()
+                .contains(&serde_json::json!("id"))
+        );
     }
 
     #[test]
@@ -330,10 +339,12 @@ mod tests {
         let schema = demote_schema();
         assert_eq!(schema["type"], "object");
         assert!(schema["properties"]["id"].is_object());
-        assert!(schema["required"]
-            .as_array()
-            .unwrap()
-            .contains(&serde_json::json!("id")));
+        assert!(
+            schema["required"]
+                .as_array()
+                .unwrap()
+                .contains(&serde_json::json!("id"))
+        );
     }
 
     #[test]
@@ -342,10 +353,12 @@ mod tests {
         assert_eq!(schema["type"], "object");
         assert!(schema["properties"]["id"].is_object());
         assert!(schema["properties"]["context"].is_object());
-        assert!(schema["required"]
-            .as_array()
-            .unwrap()
-            .contains(&serde_json::json!("id")));
+        assert!(
+            schema["required"]
+                .as_array()
+                .unwrap()
+                .contains(&serde_json::json!("id"))
+        );
     }
 
     // === PROMOTE TESTS ===
@@ -370,8 +383,7 @@ mod tests {
     #[tokio::test]
     async fn test_promote_nonexistent_node_fails() {
         let (storage, _dir) = test_storage().await;
-        let args =
-            serde_json::json!({ "id": "00000000-0000-0000-0000-000000000000" });
+        let args = serde_json::json!({ "id": "00000000-0000-0000-0000-000000000000" });
         let result = execute_promote(&storage, &test_cognitive(), Some(args)).await;
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("Node not found"));
@@ -454,8 +466,7 @@ mod tests {
     #[tokio::test]
     async fn test_demote_nonexistent_node_fails() {
         let (storage, _dir) = test_storage().await;
-        let args =
-            serde_json::json!({ "id": "00000000-0000-0000-0000-000000000000" });
+        let args = serde_json::json!({ "id": "00000000-0000-0000-0000-000000000000" });
         let result = execute_demote(&storage, &test_cognitive(), Some(args)).await;
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("Node not found"));
@@ -510,8 +521,7 @@ mod tests {
     #[tokio::test]
     async fn test_request_feedback_nonexistent_node_fails() {
         let (storage, _dir) = test_storage().await;
-        let args =
-            serde_json::json!({ "id": "00000000-0000-0000-0000-000000000000" });
+        let args = serde_json::json!({ "id": "00000000-0000-0000-0000-000000000000" });
         let result = execute_request_feedback(&storage, Some(args)).await;
         assert!(result.is_err());
     }

@@ -16,23 +16,28 @@ pub async fn execute(
     _args: Option<serde_json::Value>,
 ) -> Result<serde_json::Value, String> {
     // Average retention
-    let avg_retention = storage.get_avg_retention()
+    let avg_retention = storage
+        .get_avg_retention()
         .map_err(|e| format!("Failed to get avg retention: {}", e))?;
 
     // Retention distribution
-    let distribution = storage.get_retention_distribution()
+    let distribution = storage
+        .get_retention_distribution()
         .map_err(|e| format!("Failed to get retention distribution: {}", e))?;
 
-    let distribution_json: serde_json::Value = distribution.iter().map(|(bucket, count)| {
-        serde_json::json!({ "bucket": bucket, "count": count })
-    }).collect();
+    let distribution_json: serde_json::Value = distribution
+        .iter()
+        .map(|(bucket, count)| serde_json::json!({ "bucket": bucket, "count": count }))
+        .collect();
 
     // Retention trend
-    let trend = storage.get_retention_trend()
+    let trend = storage
+        .get_retention_trend()
         .unwrap_or_else(|_| "unknown".to_string());
 
     // Total memories and those below key thresholds
-    let stats = storage.get_stats()
+    let stats = storage
+        .get_stats()
         .map_err(|e| format!("Failed to get stats: {}", e))?;
 
     let below_30 = storage.count_memories_below_retention(0.3).unwrap_or(0);
@@ -104,16 +109,18 @@ mod tests {
         let (storage, _dir) = test_storage().await;
         // Ingest some test memories
         for i in 0..5 {
-            storage.ingest(vestige_core::IngestInput {
-                content: format!("Health test memory {}", i),
-                node_type: "fact".to_string(),
-                source: None,
-                sentiment_score: 0.0,
-                sentiment_magnitude: 0.0,
-                tags: vec!["test".to_string()],
-                valid_from: None,
-                valid_until: None,
-            }).unwrap();
+            storage
+                .ingest(vestige_core::IngestInput {
+                    content: format!("Health test memory {}", i),
+                    node_type: "fact".to_string(),
+                    source: None,
+                    sentiment_score: 0.0,
+                    sentiment_magnitude: 0.0,
+                    tags: vec!["test".to_string()],
+                    valid_from: None,
+                    valid_until: None,
+                })
+                .unwrap();
         }
 
         let result = execute(&storage, None).await;
@@ -127,24 +134,24 @@ mod tests {
     #[tokio::test]
     async fn test_health_distribution_buckets() {
         let (storage, _dir) = test_storage().await;
-        storage.ingest(vestige_core::IngestInput {
-            content: "Test memory for distribution".to_string(),
-            node_type: "fact".to_string(),
-            source: None,
-            sentiment_score: 0.0,
-            sentiment_magnitude: 0.0,
-            tags: vec![],
-            valid_from: None,
-            valid_until: None,
-        }).unwrap();
+        storage
+            .ingest(vestige_core::IngestInput {
+                content: "Test memory for distribution".to_string(),
+                node_type: "fact".to_string(),
+                source: None,
+                sentiment_score: 0.0,
+                sentiment_magnitude: 0.0,
+                tags: vec![],
+                valid_from: None,
+                valid_until: None,
+            })
+            .unwrap();
 
         let result = execute(&storage, None).await.unwrap();
         let dist = result["distribution"].as_array().unwrap();
         // Should have at least one bucket with data
         assert!(!dist.is_empty());
-        let total: i64 = dist.iter()
-            .map(|b| b["count"].as_i64().unwrap_or(0))
-            .sum();
+        let total: i64 = dist.iter().map(|b| b["count"].as_i64().unwrap_or(0)).sum();
         assert_eq!(total, 1);
     }
 }

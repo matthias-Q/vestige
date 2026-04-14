@@ -455,9 +455,10 @@ impl ConsolidationScheduler {
             // Strengthen connections between sequentially replayed memories
             for window in replay.sequence.windows(2) {
                 if let [id_a, id_b] = window
-                    && graph.strengthen_connection(id_a, id_b, 0.1) {
-                        strengthened += 1;
-                    }
+                    && graph.strengthen_connection(id_a, id_b, 0.1)
+                {
+                    strengthened += 1;
+                }
             }
 
             // Also strengthen based on discovered patterns
@@ -704,11 +705,12 @@ impl ConnectionGraph {
 
         for (a, b) in [(from_id, to_id), (to_id, from_id)] {
             if let Some(connections) = self.connections.get_mut(a)
-                && let Some(conn) = connections.iter_mut().find(|c| c.target_id == b) {
-                    conn.strength = (conn.strength + boost).min(2.0);
-                    conn.last_strengthened = now;
-                    strengthened = true;
-                }
+                && let Some(conn) = connections.iter_mut().find(|c| c.target_id == b)
+            {
+                conn.strength = (conn.strength + boost).min(2.0);
+                conn.last_strengthened = now;
+                strengthened = true;
+            }
         }
 
         strengthened
@@ -1481,9 +1483,10 @@ impl MemoryDreamer {
 
             // Try to generate insight from this cluster
             if let Some(insight) = self.generate_insight_from_cluster(&cluster_memories)
-                && insight.novelty_score >= self.config.min_novelty {
-                    insights.push(insight);
-                }
+                && insight.novelty_score >= self.config.min_novelty
+            {
+                insights.push(insight);
+            }
 
             if insights.len() >= self.config.max_insights {
                 break;

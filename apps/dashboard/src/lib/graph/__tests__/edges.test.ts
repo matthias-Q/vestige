@@ -48,12 +48,14 @@ describe('EdgeManager', () => {
 			expect(line.userData.target).toBe('b');
 		});
 
-		it('caps opacity at 0.6', () => {
+		it('caps opacity at 0.8 (raised from 0.6 in v2.0.6 issue #31 fix)', () => {
 			const edges = [makeEdge('a', 'b', { weight: 10.0 })];
 			manager.createEdges(edges, positions);
 
 			const line = manager.group.children[0] as any;
-			expect(line.material.opacity).toBeLessThanOrEqual(0.6);
+			expect(line.material.opacity).toBeLessThanOrEqual(0.8);
+			// Baseline floor too — with weight 10 we should be at the cap, not below old 0.6
+			expect(line.material.opacity).toBeGreaterThanOrEqual(0.6);
 		});
 	});
 
@@ -122,7 +124,8 @@ describe('EdgeManager', () => {
 			}
 
 			const line = manager.group.children[0] as any;
-			expect(line.material.opacity).toBe(0.5);
+			// v2.0.6 issue #31 fix raised final edge opacity 0.5 → 0.65
+			expect(line.material.opacity).toBe(0.65);
 		});
 
 		it('uses easeOutCubic for smooth deceleration', () => {
@@ -266,7 +269,8 @@ describe('EdgeManager', () => {
 			// Both should be fully grown
 			expect(manager.group.children.length).toBe(2);
 			manager.group.children.forEach((child) => {
-				expect((child as any).material.opacity).toBe(0.5);
+				// v2.0.6 issue #31 fix raised final edge opacity 0.5 → 0.65
+				expect((child as any).material.opacity).toBe(0.65);
 			});
 		});
 

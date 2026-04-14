@@ -74,6 +74,9 @@ export interface GraphNode {
 	createdAt: string;
 	updatedAt: string;
 	isCenter: boolean;
+	// v2.0.5 Active Forgetting — top-down suppression state
+	suppression_count?: number;
+	suppressed_at?: string;
 }
 
 export interface GraphEdge {
@@ -150,6 +153,9 @@ export type VestigeEventType =
 	| 'MemoryDeleted'
 	| 'MemoryPromoted'
 	| 'MemoryDemoted'
+	| 'MemorySuppressed'
+	| 'MemoryUnsuppressed'
+	| 'Rac1CascadeSwept'
 	| 'SearchPerformed'
 	| 'DreamStarted'
 	| 'DreamProgress'
@@ -198,6 +204,9 @@ export const EVENT_TYPE_COLORS: Record<string, string> = {
 	MemoryDeleted: '#FF4757',
 	MemoryPromoted: '#00FF88',
 	MemoryDemoted: '#FF6B35',
+	MemorySuppressed: '#A33FFF',
+	MemoryUnsuppressed: '#14E8C6',
+	Rac1CascadeSwept: '#6E3FFF',
 	SearchPerformed: '#818CF8',
 	DreamStarted: '#9D00FF',
 	DreamProgress: '#B44AFF',

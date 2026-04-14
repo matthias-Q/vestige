@@ -17,17 +17,17 @@ use axum::response::IntoResponse;
 use axum::routing::{delete, post};
 use axum::{Json, Router};
 use subtle::ConstantTimeEq;
-use tokio::sync::{broadcast, Mutex, RwLock};
+use tokio::sync::{Mutex, RwLock, broadcast};
 use tower::ServiceBuilder;
 use tower::limit::ConcurrencyLimitLayer;
 use tower_http::cors::CorsLayer;
 use tracing::{info, warn};
 
 use crate::cognitive::CognitiveEngine;
+use crate::dashboard::events::VestigeEvent;
 use crate::protocol::types::JsonRpcRequest;
 use crate::server::McpServer;
 use vestige_core::Storage;
-use crate::dashboard::events::VestigeEvent;
 
 /// Maximum concurrent sessions.
 const MAX_SESSIONS: usize = 100;
@@ -95,7 +95,11 @@ pub async fn start_http_transport(
                 });
                 let removed = before - map.len();
                 if removed > 0 {
-                    info!("Session reaper: removed {} idle sessions ({} active)", removed, map.len());
+                    info!(
+                        "Session reaper: removed {} idle sessions ({} active)",
+                        removed,
+                        map.len()
+                    );
                 }
             }
         });
@@ -119,8 +123,15 @@ pub async fn start_http_transport(
                             .filter_map(|s| s.parse().ok())
                             .collect::<Vec<_>>(),
                         )
-                        .allow_methods([axum::http::Method::POST, axum::http::Method::DELETE, axum::http::Method::OPTIONS])
-                        .allow_headers([axum::http::header::CONTENT_TYPE, axum::http::header::AUTHORIZATION])
+                        .allow_methods([
+                            axum::http::Method::POST,
+                            axum::http::Method::DELETE,
+                            axum::http::Method::OPTIONS,
+                        ])
+                        .allow_headers([
+                            axum::http::header::CONTENT_TYPE,
+                            axum::http::header::AUTHORIZATION,
+                        ]),
                 ),
         )
         .with_state(state);
@@ -156,9 +167,10 @@ fn validate_auth(headers: &HeaderMap, expected: &str) -> Result<(), (StatusCode,
         .and_then(|v| v.to_str().ok())
         .ok_or((StatusCode::UNAUTHORIZED, "Missing Authorization header"))?;
 
-    let token = header
-        .strip_prefix("Bearer ")
-        .ok_or((StatusCode::UNAUTHORIZED, "Invalid Authorization scheme (expected Bearer)"))?;
+    let token = header.strip_prefix("Bearer ").ok_or((
+        StatusCode::UNAUTHORIZED,
+        "Invalid Authorization scheme (expected Bearer)",
+    ))?;
 
     // Constant-time comparison: prevents timing side-channel attacks.
     // We first check lengths match (length itself is not secret since UUIDs
@@ -209,11 +221,7 @@ async fn post_mcp(
         // Take write lock immediately to avoid TOCTOU race on MAX_SESSIONS check.
         let mut sessions = state.sessions.write().await;
         if sessions.len() >= MAX_SESSIONS {
-            return (
-                StatusCode::SERVICE_UNAVAILABLE,
-                "Too many active sessions",
-            )
-                .into_response();
+            return (StatusCode::SERVICE_UNAVAILABLE, "Too many active sessions").into_response();
         }
 
         let server = McpServer::new_with_events(
@@ -242,13 +250,23 @@ async fn post_mcp(
         match response {
             Some(resp) => {
                 let mut resp_headers = HeaderMap::new();
-                resp_headers.insert("mcp-session-id", session_id.parse().unwrap_or_else(|_| axum::http::HeaderValue::from_static("invalid")));
+                resp_headers.insert(
+                    "mcp-session-id",
+                    session_id
+                        .parse()
+                        .unwrap_or_else(|_| axum::http::HeaderValue::from_static("invalid")),
+                );
                 (StatusCode::OK, resp_headers, Json(resp)).into_response()
             }
             None => {
                 // Notifications return 202
                 let mut resp_headers = HeaderMap::new();
-                resp_headers.insert("mcp-session-id", session_id.parse().unwrap_or_else(|_| axum::http::HeaderValue::from_static("invalid")));
+                resp_headers.insert(
+                    "mcp-session-id",
+                    session_id
+                        .parse()
+                        .unwrap_or_else(|_| axum::http::HeaderValue::from_static("invalid")),
+                );
                 (StatusCode::ACCEPTED, resp_headers).into_response()
             }
         }
@@ -273,11 +291,7 @@ async fn post_mcp(
         let session = match session {
             Some(s) => s,
             None => {
-                return (
-                    StatusCode::NOT_FOUND,
-                    "Session not found or expired",
-                )
-                    .into_response();
+                return (StatusCode::NOT_FOUND, "Session not found or expired").into_response();
             }
         };
 
@@ -288,7 +302,12 @@ async fn post_mcp(
         };
 
         let mut resp_headers = HeaderMap::new();
-        resp_headers.insert("mcp-session-id", session_id.parse().unwrap_or_else(|_| axum::http::HeaderValue::from_static("invalid")));
+        resp_headers.insert(
+            "mcp-session-id",
+            session_id
+                .parse()
+                .unwrap_or_else(|_| axum::http::HeaderValue::from_static("invalid")),
+        );
 
         match response {
             Some(resp) => (StatusCode::OK, resp_headers, Json(resp)).into_response(),
@@ -308,7 +327,13 @@ async fn delete_mcp(
 
     let session_id = match session_id_from_headers(&headers) {
         Some(id) => id,
-        None => return (StatusCode::BAD_REQUEST, "Missing or invalid Mcp-Session-Id header").into_response(),
+        None => {
+            return (
+                StatusCode::BAD_REQUEST,
+                "Missing or invalid Mcp-Session-Id header",
+            )
+                .into_response();
+        }
     };
 
     let mut sessions = state.sessions.write().await;

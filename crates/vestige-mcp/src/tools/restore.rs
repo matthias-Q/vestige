@@ -8,7 +8,6 @@ use serde::Deserialize;
 use serde_json::Value;
 use std::sync::Arc;
 
-
 use vestige_core::{IngestInput, Storage};
 
 /// Input schema for restore tool
@@ -51,10 +50,7 @@ struct MemoryBackup {
     source: Option<String>,
 }
 
-pub async fn execute(
-    storage: &Arc<Storage>,
-    args: Option<Value>,
-) -> Result<Value, String> {
+pub async fn execute(storage: &Arc<Storage>, args: Option<Value>) -> Result<Value, String> {
     let args: RestoreArgs = match args {
         Some(v) => serde_json::from_value(v).map_err(|e| format!("Invalid arguments: {}", e))?,
         None => return Err("Missing arguments".to_string()),
@@ -71,25 +67,26 @@ pub async fn execute(
 
     // Try parsing as wrapped format first (MCP response wrapper),
     // then fall back to direct RecallResult
-    let memories: Vec<MemoryBackup> =
-        if let Ok(wrapper) = serde_json::from_str::<Vec<BackupWrapper>>(&backup_content) {
-            if let Some(first) = wrapper.first() {
-                let recall: RecallResult = serde_json::from_str(&first.text)
-                    .map_err(|e| format!("Failed to parse backup contents: {}", e))?;
-                recall.results
-            } else {
-                return Err("Empty backup file".to_string());
-            }
-        } else if let Ok(recall) = serde_json::from_str::<RecallResult>(&backup_content) {
+    let memories: Vec<MemoryBackup> = if let Ok(wrapper) =
+        serde_json::from_str::<Vec<BackupWrapper>>(&backup_content)
+    {
+        if let Some(first) = wrapper.first() {
+            let recall: RecallResult = serde_json::from_str(&first.text)
+                .map_err(|e| format!("Failed to parse backup contents: {}", e))?;
             recall.results
-        } else if let Ok(nodes) = serde_json::from_str::<Vec<MemoryBackup>>(&backup_content) {
-            nodes
         } else {
-            return Err(
-                "Unrecognized backup format. Expected MCP wrapper, RecallResult, or array of memories."
-                    .to_string(),
-            );
-        };
+            return Err("Empty backup file".to_string());
+        }
+    } else if let Ok(recall) = serde_json::from_str::<RecallResult>(&backup_content) {
+        recall.results
+    } else if let Ok(nodes) = serde_json::from_str::<Vec<MemoryBackup>>(&backup_content) {
+        nodes
+    } else {
+        return Err(
+            "Unrecognized backup format. Expected MCP wrapper, RecallResult, or array of memories."
+                .to_string(),
+        );
+    };
 
     let total = memories.len();
     if total == 0 {
@@ -108,7 +105,10 @@ pub async fn execute(
     for memory in &memories {
         let input = IngestInput {
             content: memory.content.clone(),
-            node_type: memory.node_type.clone().unwrap_or_else(|| "fact".to_string()),
+            node_type: memory
+                .node_type
+                .clone()
+                .unwrap_or_else(|| "fact".to_string()),
             source: memory.source.clone(),
             sentiment_score: 0.0,
             sentiment_magnitude: 0.0,
@@ -157,10 +157,12 @@ mod tests {
         let s = schema();
         assert_eq!(s["type"], "object");
         assert!(s["properties"]["path"].is_object());
-        assert!(s["required"]
-            .as_array()
-            .unwrap()
-            .contains(&serde_json::json!("path")));
+        assert!(
+            s["required"]
+                .as_array()
+                .unwrap()
+                .contains(&serde_json::json!("path"))
+        );
     }
 
     #[tokio::test]
