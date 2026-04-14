@@ -1392,7 +1392,7 @@ impl Storage {
         Ok(similarity_results)
     }
 
-    /// Hybrid search
+    /// Hybrid search (delegates to hybrid_search_filtered with no type filters)
     #[cfg(all(feature = "embeddings", feature = "vector-search"))]
     pub fn hybrid_search(
         &self,
@@ -1401,10 +1401,40 @@ impl Storage {
         keyword_weight: f32,
         semantic_weight: f32,
     ) -> Result<Vec<SearchResult>> {
-        let keyword_results = self.keyword_search_with_scores(query, limit * 2)?;
+        self.hybrid_search_filtered(query, limit, keyword_weight, semantic_weight, None, None)
+    }
+
+    /// Hybrid search with optional type filtering pushed into the storage layer.
+    ///
+    /// When `include_types` is `Some`, only nodes whose `node_type` matches one of
+    /// the given strings are returned. When `exclude_types` is `Some`, nodes whose
+    /// `node_type` matches are excluded. `include_types` takes precedence over
+    /// `exclude_types`. Both are case-sensitive and compared against the stored
+    /// `node_type` value.
+    #[cfg(all(feature = "embeddings", feature = "vector-search"))]
+    pub fn hybrid_search_filtered(
+        &self,
+        query: &str,
+        limit: i32,
+        keyword_weight: f32,
+        semantic_weight: f32,
+        include_types: Option<&[String]>,
+        exclude_types: Option<&[String]>,
+    ) -> Result<Vec<SearchResult>> {
+        let has_type_filter = include_types.is_some() || exclude_types.is_some();
+        // Over-fetch more aggressively when type filters are active so that
+        // after filtering we still have enough candidates to fill `limit`.
+        let overfetch_factor = if has_type_filter { 4 } else { 2 };
+
+        let keyword_results = self.keyword_search_with_scores(
+            query,
+            limit * overfetch_factor,
+            include_types,
+            exclude_types,
+        )?;
 
         let semantic_results = if self.embedding_service.is_ready() {
-            self.semantic_search_raw(query, limit * 2)?
+            self.semantic_search_raw(query, limit * overfetch_factor)?
         } else {
             vec![]
         };
@@ -1417,8 +1447,22 @@ impl Storage {
 
         let mut results = Vec::with_capacity(limit as usize);
 
-        for (node_id, combined_score) in combined.into_iter().take(limit as usize) {
+        for (node_id, combined_score) in combined.into_iter() {
+            if results.len() >= limit as usize {
+                break;
+            }
             if let Some(node) = self.get_node(&node_id)? {
+                // Apply type filtering for results that came from semantic search
+                // (keyword search already filters in SQL, but semantic search cannot)
+                if let Some(includes) = include_types {
+                    if !includes.iter().any(|t| t == &node.node_type) {
+                        continue;
+                    }
+                } else if let Some(excludes) = exclude_types {
+                    if excludes.iter().any(|t| t == &node.node_type) {
+                        continue;
+                    }
+                }
                 let keyword_score = keyword_results
                     .iter()
                     .find(|(id, _)| id == &node_id)
@@ -1486,23 +1530,71 @@ impl Storage {
         Ok(results)
     }
 
-    /// Keyword search returning scores
+    /// Keyword search returning scores, with optional type filtering in the SQL query.
     #[cfg(all(feature = "embeddings", feature = "vector-search"))]
-    fn keyword_search_with_scores(&self, query: &str, limit: i32) -> Result<Vec<(String, f32)>> {
+    fn keyword_search_with_scores(
+        &self,
+        query: &str,
+        limit: i32,
+        include_types: Option<&[String]>,
+        exclude_types: Option<&[String]>,
+    ) -> Result<Vec<(String, f32)>> {
         let sanitized_query = sanitize_fts5_query(query);
+
+        // Build the type filter clause and collect parameter values.
+        // We use numbered parameters: ?1 = query, ?2 = limit, ?3.. = type strings.
+        let mut type_clause = String::new();
+        let type_values: Vec<&str>;
+
+        if let Some(includes) = include_types {
+            if !includes.is_empty() {
+                let placeholders: Vec<String> = (0..includes.len())
+                    .map(|i| format!("?{}", i + 3))
+                    .collect();
+                type_clause = format!(" AND n.node_type IN ({})", placeholders.join(","));
+                type_values = includes.iter().map(|s| s.as_str()).collect();
+            } else {
+                type_values = vec![];
+            }
+        } else if let Some(excludes) = exclude_types {
+            if !excludes.is_empty() {
+                let placeholders: Vec<String> = (0..excludes.len())
+                    .map(|i| format!("?{}", i + 3))
+                    .collect();
+                type_clause = format!(" AND n.node_type NOT IN ({})", placeholders.join(","));
+                type_values = excludes.iter().map(|s| s.as_str()).collect();
+            } else {
+                type_values = vec![];
+            }
+        } else {
+            type_values = vec![];
+        }
+
+        let sql = format!(
+            "SELECT n.id, rank FROM knowledge_nodes n
+             JOIN knowledge_fts fts ON n.id = fts.id
+             WHERE knowledge_fts MATCH ?1{}
+             ORDER BY rank
+             LIMIT ?2",
+            type_clause
+        );
 
         let reader = self.reader.lock()
             .map_err(|_| StorageError::Init("Reader lock poisoned".into()))?;
-        let mut stmt = reader.prepare(
-            "SELECT n.id, rank FROM knowledge_nodes n
-             JOIN knowledge_fts fts ON n.id = fts.id
-             WHERE knowledge_fts MATCH ?1
-             ORDER BY rank
-             LIMIT ?2",
-        )?;
+        let mut stmt = reader.prepare(&sql)?;
+
+        // Build the parameter list: [query, limit, ...type_values]
+        let mut param_values: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+        param_values.push(Box::new(sanitized_query.clone()));
+        param_values.push(Box::new(limit));
+        for tv in &type_values {
+            param_values.push(Box::new(tv.to_string()));
+        }
+        let params_ref: Vec<&dyn rusqlite::ToSql> =
+            param_values.iter().map(|p| p.as_ref()).collect();
 
         let results: Vec<(String, f32)> = stmt
-            .query_map(params![sanitized_query, limit], |row| {
+            .query_map(params_ref.as_slice(), |row| {
                 Ok((row.get::<_, String>(0)?, row.get::<_, f64>(1)? as f32))
             })?
             .filter_map(|r| r.ok())
@@ -3835,5 +3927,136 @@ mod tests {
     fn test_get_last_backup_timestamp_no_panic() {
         // Static method should not panic even if no backups exist
         let _ = Storage::get_last_backup_timestamp();
+    }
+
+    #[test]
+    fn test_keyword_search_with_include_types() {
+        let storage = create_test_storage();
+
+        // Ingest nodes of different types all containing the word "quantum"
+        storage.ingest(IngestInput {
+            content: "Quantum mechanics is fundamental to physics".to_string(),
+            node_type: "fact".to_string(),
+            ..Default::default()
+        }).unwrap();
+        storage.ingest(IngestInput {
+            content: "Quantum computing uses qubits for calculation".to_string(),
+            node_type: "concept".to_string(),
+            ..Default::default()
+        }).unwrap();
+        storage.ingest(IngestInput {
+            content: "Quantum entanglement was demonstrated in the lab".to_string(),
+            node_type: "event".to_string(),
+            ..Default::default()
+        }).unwrap();
+
+        // Search with include_types = ["fact"] — should only return the fact
+        let include = vec!["fact".to_string()];
+        let results = storage.hybrid_search_filtered(
+            "quantum", 10, 0.3, 0.7,
+            Some(&include), None,
+        ).unwrap();
+
+        assert!(!results.is_empty(), "should return at least one result");
+        for r in &results {
+            assert_eq!(r.node.node_type, "fact",
+                "include_types=[fact] should only return facts, got: {}", r.node.node_type);
+        }
+    }
+
+    #[test]
+    fn test_keyword_search_with_exclude_types() {
+        let storage = create_test_storage();
+
+        storage.ingest(IngestInput {
+            content: "Photosynthesis converts sunlight to energy".to_string(),
+            node_type: "fact".to_string(),
+            ..Default::default()
+        }).unwrap();
+        storage.ingest(IngestInput {
+            content: "Photosynthesis is a complex biochemical process".to_string(),
+            node_type: "reflection".to_string(),
+            ..Default::default()
+        }).unwrap();
+
+        // Search with exclude_types = ["reflection"] — should skip the reflection
+        let exclude = vec!["reflection".to_string()];
+        let results = storage.hybrid_search_filtered(
+            "photosynthesis", 10, 0.3, 0.7,
+            None, Some(&exclude),
+        ).unwrap();
+
+        assert!(!results.is_empty(), "should return at least one result");
+        for r in &results {
+            assert_ne!(r.node.node_type, "reflection",
+                "exclude_types=[reflection] should not return reflections");
+        }
+    }
+
+    #[test]
+    fn test_include_types_takes_precedence_over_exclude() {
+        let storage = create_test_storage();
+
+        storage.ingest(IngestInput {
+            content: "Gravity holds planets in orbit around stars".to_string(),
+            node_type: "fact".to_string(),
+            ..Default::default()
+        }).unwrap();
+        storage.ingest(IngestInput {
+            content: "Gravity waves were first detected by LIGO".to_string(),
+            node_type: "event".to_string(),
+            ..Default::default()
+        }).unwrap();
+
+        // When both are provided, include_types wins
+        let include = vec!["fact".to_string()];
+        let exclude = vec!["fact".to_string()];
+        let results = storage.hybrid_search_filtered(
+            "gravity", 10, 0.3, 0.7,
+            Some(&include), Some(&exclude),
+        ).unwrap();
+
+        // include_types takes precedence — facts should be returned
+        assert!(!results.is_empty());
+        for r in &results {
+            assert_eq!(r.node.node_type, "fact");
+        }
+    }
+
+    #[test]
+    fn test_type_filter_with_no_matches_returns_empty() {
+        let storage = create_test_storage();
+
+        storage.ingest(IngestInput {
+            content: "DNA carries genetic information in cells".to_string(),
+            node_type: "fact".to_string(),
+            ..Default::default()
+        }).unwrap();
+
+        // Search for a type that doesn't exist among matches
+        let include = vec!["person".to_string()];
+        let results = storage.hybrid_search_filtered(
+            "DNA", 10, 0.3, 0.7,
+            Some(&include), None,
+        ).unwrap();
+
+        assert!(results.is_empty(),
+            "filtering for a non-matching type should return empty results");
+    }
+
+    #[test]
+    fn test_hybrid_search_backward_compat() {
+        // Ensure the original hybrid_search (no type filters) still works
+        let storage = create_test_storage();
+
+        storage.ingest(IngestInput {
+            content: "Neurons transmit electrical signals in the brain".to_string(),
+            node_type: "fact".to_string(),
+            ..Default::default()
+        }).unwrap();
+
+        let results = storage.hybrid_search("neurons", 10, 0.3, 0.7).unwrap();
+        assert!(!results.is_empty());
+        assert!(results[0].node.content.contains("Neurons"));
     }
 }
