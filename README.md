@@ -2,7 +2,7 @@
 
 # Vestige
 
-### The cognitive engine that gives AI a brain.
+### The cognitive engine that gives AI agents a brain.
 
 [![GitHub stars](https://img.shields.io/github/stars/samvallad33/vestige?style=social)](https://github.com/samvallad33/vestige)
 [![Release](https://img.shields.io/github/v/release/samvallad33/vestige)](https://github.com/samvallad33/vestige/releases/latest)
@@ -10,7 +10,7 @@
 [![License](https://img.shields.io/badge/license-AGPL--3.0-blue)](LICENSE)
 [![MCP Compatible](https://img.shields.io/badge/MCP-compatible-green)](https://modelcontextprotocol.io)
 
-**Your AI forgets everything between sessions. Vestige fixes that.**
+**Your Agent forgets everything between sessions. Vestige fixes that.**
 
 Built on 130 years of memory research — FSRS-6 spaced repetition, prediction error gating, synaptic tagging, spreading activation, memory dreaming — all running in a single Rust binary with a 3D neural visualization dashboard. 100% local. Zero cloud.
 
