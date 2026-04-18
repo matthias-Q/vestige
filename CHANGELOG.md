@@ -5,6 +5,45 @@ All notable changes to Vestige will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.6] - 2026-04-18 — "Composer"
+
+Polish release aimed at new-user happiness. v2.0.5's cognitive stack was already shipping; v2.0.6 makes it *feel* alive in the dashboard and stays out of your way on the prompt side.
+
+### Added
+
+#### Dashboard visual feedback for six live events
+- `MemorySuppressed` → violet implosion + compounding pulse whose intensity scales with `suppression_count` (Anderson 2025 SIF visualised).
+- `MemoryUnsuppressed` → rainbow burst + green pulse when a memory is brought back within the 24h labile window.
+- `Rac1CascadeSwept` → violet wave across a random neighbour sample while the background Rac1 worker fades co-activated memories.
+- `Connected` → gentle cyan ripple on WebSocket handshake.
+- `ConsolidationStarted` → subtle amber pulses across a 20-node sample during the FSRS-6 decay cycle (matches feed-entry colour).
+- `ImportanceScored` → magenta pulse on the scored node with intensity proportional to composite score.
+
+Before v2.0.6 all six events fired against a silent graph. Users perceived the dashboard as broken or unresponsive during real cognitive work.
+
+#### `VESTIGE_SYSTEM_PROMPT_MODE` environment variable
+- `minimal` (default) — 3-sentence MCP `instructions` string telling the client how to use Vestige and how to react to explicit feedback. Safe for every audience, every client, every use case.
+- `full` — opt in to the composition mandate (Composing / Never-composed / Recommendation response shape + FSRS-trust blocking phrase). Useful for high-stakes decision workflows; misfires on trivial retrievals, which is why it is not the default.
+
+Advertised in `vestige-mcp --help` alongside `VESTIGE_DASHBOARD_ENABLED`.
+
+### Fixed
+
+#### Dashboard intentions page
+- `IntentionItem.priority` was typed as `string` but the API returns the numeric FSRS-style scale (1=low, 2=normal, 3=high, 4=critical). Every intention rendered as "normal priority" regardless of its real value. Now uses a `PRIORITY_LABELS` map keyed by the numeric scale.
+- `trigger_value` was typed as a plain string but the API returns `trigger_data` as a JSON-encoded payload (e.g. `{"type":"time","at":"..."}`). The UI surfaced raw JSON for every non-manual trigger. A new `summarizeTrigger()` helper parses `trigger_data` and picks the most human-readable field — `condition` / `topic` / formatted `at` / `in_minutes` / `codebase/filePattern` — before truncating for display. Closes the loop on PR #26's snake_case TriggerSpec fix at the UI layer.
+
+### Docs
+
+- `README.md` — new "What's New in v2.0.6" header up top; v2.0.5 block strengthened with explicit contrast against Ebbinghaus 1885 passive decay and Anderson 1994 retrieval-induced forgetting; new "Forgetting" row in the RAG-vs-Vestige comparison table.
+- Intel-Mac and Windows install steps replaced with a working `cargo build --release -p vestige-mcp` snippet. The pre-built binaries for those targets are blocked on upstream toolchain gaps (`ort-sys` lacks Intel-Mac prebuilts in the 2.0.0-rc.11 release pinned by `fastembed 5.13.2`; `usearch 2.24.0` hit a Windows MSVC compile break tracked as [usearch#746](https://github.com/unum-cloud/usearch/issues/746)).
+
+### Safety
+
+No regressions of merged contributor PRs — v2.0.6 only touches regions that are non-overlapping with #20 (resource URI strip), #24 (codex integration docs), #26 (snake_case TriggerSpec), #28 (deep_reference query relevance), #29 (older glibc feature flags), #30 (`VESTIGE_DASHBOARD_ENABLED`), #32 (dream eviction), and #33 (keyword-first search).
+
+---
+
 ## [2.0.5] - 2026-04-14 — "Intentional Amnesia"
 
 Every AI memory system stores too much. Vestige now treats forgetting as a first-class, neuroscientifically-grounded primitive. This release adds **active forgetting** — top-down inhibitory control over memory retrieval, based on two 2025 papers that no other AI memory system has implemented.

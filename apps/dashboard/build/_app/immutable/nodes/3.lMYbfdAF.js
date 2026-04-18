@@ -1,1 +1,0 @@
-import"../chunks/Bzak7iHL.js";import"../chunks/D_N1HvA5.js";import{o as p}from"../chunks/DeTA_5mp.js";import{p as r,a as t}from"../chunks/nyjtQ1Ok.js";import{i as a}from"../chunks/Ck7jSX2P.js";import{g as m}from"../chunks/DwA4GIGc.js";function u(i,o){r(o,!1),p(()=>m("/graph",{replaceState:!0})),a(),t()}export{u as component};
