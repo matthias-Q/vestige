@@ -91,6 +91,9 @@ fn parse_args() -> Config {
                 println!("    VESTIGE_HTTP_PORT          HTTP transport port (default: 3928)");
                 println!("    VESTIGE_DASHBOARD_ENABLED     Enable dashboard (default: disabled)");
                 println!("    VESTIGE_DASHBOARD_PORT     Dashboard port (default: 3927)");
+                println!(
+                    "    VESTIGE_SYSTEM_PROMPT_MODE Inject the full composition mandate into every MCP session (minimal|full, default: minimal)"
+                );
                 println!();
                 println!("EXAMPLES:");
                 println!("    vestige-mcp");

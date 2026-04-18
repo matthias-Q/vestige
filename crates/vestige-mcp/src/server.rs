@@ -22,6 +22,50 @@ use crate::resources;
 use crate::tools;
 use vestige_core::Storage;
 
+/// Build the MCP `instructions` string injected into every connecting client's
+/// system prompt.
+///
+/// Default ("minimal", 3 sentences) is safe for any user: competitive coders,
+/// hobbyists saving recipes, Rails devs saving bug fixes, enterprise deployments.
+/// It earns its per-session token cost by telling the client *how* to use
+/// Vestige without imposing one maintainer's workflow on strangers.
+///
+/// The "full" variant is the composition mandate that enforces the
+/// Composing / Never-composed / Recommendation response shape, names the
+/// AIMO3 36/50 case study as the origin, and includes the "Vestige is
+/// blocking this:" refusal phrase. It is load-bearing for Sam's own
+/// decision-adjacent work but would misfire on trivial retrievals for a
+/// general audience, so it is opt-in via `VESTIGE_SYSTEM_PROMPT_MODE=full`.
+///
+/// Anything other than `full` falls back to minimal.
+fn build_instructions() -> String {
+    let mode = std::env::var("VESTIGE_SYSTEM_PROMPT_MODE").unwrap_or_default();
+    if mode.eq_ignore_ascii_case("full") {
+        "Vestige is your long-term cognitive memory AND reasoning engine, not a RAG database. \
+         Every retrieval MUST be composed into a recommendation, never summarized.\
+         \n\nCOMPOSITION MANDATE: When you receive memories from search, deep_reference, \
+         cross_reference, or explore_connections, your response MUST follow this shape. \
+         (a) Composing: [memory IDs], followed by your composition logic (your chain-of-thought \
+         about how the memories relate, NOT a restatement of their contents). \
+         (b) Never-composed detected: list combinations of retrieved memories that share \
+         tags/topics but have never been referenced together, or write 'None.' \
+         (c) Recommendation: what the user should DO, as a concrete executable action. \
+         If your draft begins 'Memory A says X. Memory B says Y.' STOP and rewrite.\
+         \n\nBLOCKING PHRASE: If retrieved high-trust memories (retention > 0.7, reps > 0) \
+         contradict what you were about to say, start your response with 'Vestige is blocking this:' \
+         and surface the contradiction verbatim before proceeding. FSRS trust overrides fresh guesses.\
+         \n\nFEEDBACK: If the user confirms a memory was helpful, call memory(action='promote'). \
+         If they correct it, call memory(action='demote'). Do not ask permission, just act."
+            .to_string()
+    } else {
+        "Vestige is your long-term memory system. Compose retrievals into recommendations \
+         rather than listing their contents when the user is making a decision. \
+         On user feedback, call memory(action='promote') for helpful retrievals and \
+         memory(action='demote') for wrong ones — do not ask permission, just act."
+            .to_string()
+    }
+}
+
 /// MCP Server implementation
 pub struct McpServer {
     storage: Arc<Storage>,
@@ -157,14 +201,7 @@ impl McpServer {
                 }),
                 prompts: None,
             },
-            instructions: Some(
-                "Vestige is your long-term memory system. Use it to remember important information, \
-                 recall past knowledge, and maintain context across sessions. The system uses \
-                 FSRS-6 spaced repetition to naturally decay memories over time. \
-                 \n\nFeedback Protocol: If the user explicitly confirms a memory was helpful, use \
-                 memory(action='promote'). If they correct a hallucination or say a memory was wrong, use \
-                 memory(action='demote'). Do not ask for permission - just act on their feedback.".to_string()
-            ),
+            instructions: Some(build_instructions()),
         };
 
         serde_json::to_value(result).map_err(|e| JsonRpcError::internal_error(&e.to_string()))
