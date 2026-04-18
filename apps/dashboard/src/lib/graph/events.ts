@@ -327,5 +327,118 @@ export function mapEventToEffects(
 			}
 			break;
 		}
+
+		// v2.0.5 Active Forgetting — Anderson 2025 SIF + Davis Rac1
+		// These events fire when the `suppress` MCP tool is called and when
+		// the background Rac1 cascade worker sweeps recently-suppressed seeds.
+		// Before these handlers landed, suppression fired silently in the graph.
+
+		case 'MemorySuppressed': {
+			const data = event.data as {
+				id?: string;
+				suppression_count?: number;
+			};
+			if (!data.id) break;
+			const pos = nodePositions.get(data.id);
+			if (pos) {
+				// Violet implosion: top-down inhibitory control collapsing into the node
+				effects.createImplosion(pos, new THREE.Color(0xa855f7));
+				// Plus a slow violet pulse so the suppressed node is visually marked
+				// even after the implosion frames finish. Strength scales with
+				// compounding suppression_count (more hits = stronger pulse).
+				const count = Math.max(1, data.suppression_count ?? 1);
+				const strength = Math.min(0.4 + count * 0.15, 1.0);
+				effects.addPulse(data.id, strength, new THREE.Color(0xa855f7), 0.04);
+			}
+			break;
+		}
+
+		case 'MemoryUnsuppressed': {
+			const data = event.data as { id?: string; remaining_count?: number };
+			if (!data.id) break;
+			const pos = nodePositions.get(data.id);
+			if (pos && nodeMeshMap.has(data.id)) {
+				// Reversal within the 24h labile window — bring the memory back.
+				// Rainbow spawn burst celebrates the reversal, then a green pulse
+				// to mark the node as "active again" (paralleling MemoryPromoted).
+				effects.createRainbowBurst(pos, new THREE.Color(0x00ff88));
+				effects.addPulse(data.id, 1.0, new THREE.Color(0x00ff88), 0.02);
+			}
+			break;
+		}
+
+		case 'Rac1CascadeSwept': {
+			// Rac1 cascade runs as a background sweep. The event carries counts,
+			// not specific node IDs, so we visualize it as a subtle violet wave
+			// rippling through random sampled neighbors to indicate "decay is
+			// spreading through co-activated memories." Future v2.1 events may
+			// carry the actual affected IDs; this handler can be tightened then.
+			const data = event.data as {
+				seeds?: number;
+				neighbors_affected?: number;
+			};
+			const affected = data.neighbors_affected ?? 0;
+			if (affected === 0) break;
+			const allIds = Array.from(nodeMeshMap.keys());
+			const sampleSize = Math.min(affected, allIds.length, 12);
+			for (let i = 0; i < sampleSize; i++) {
+				const idx = Math.floor(Math.random() * allIds.length);
+				const targetId = allIds[idx];
+				effects.addPulse(targetId, 0.5, new THREE.Color(0xa855f7), 0.035);
+			}
+			break;
+		}
+
+		// v2.0.6: wire three previously-silent core events. Before this, the
+		// live feed showed Connected / ConsolidationStarted / ImportanceScored
+		// firing but the 3D graph stayed motionless — users perceived the
+		// dashboard as unresponsive during real cognitive work.
+
+		case 'Connected': {
+			// WebSocket handshake just completed. A gentle ripple from the
+			// first node signals "link is live" without dominating the scene.
+			const firstId = nodeMeshMap.keys().next().value;
+			if (!firstId) break;
+			const pos = nodePositions.get(firstId);
+			if (pos) {
+				effects.createRippleWave(pos);
+			}
+			break;
+		}
+
+		case 'ConsolidationStarted': {
+			// FSRS-6 consolidation cycle starting. Amber pulses across a
+			// random sample signal "retention scores are recomputing across
+			// the graph." Intentionally subtle — consolidation runs for
+			// seconds, so the visual shouldn't demand attention the whole
+			// time. Colour matches the ConsolidationStarted feed entry.
+			const allIds = Array.from(nodeMeshMap.keys());
+			const sampleSize = Math.min(allIds.length, 20);
+			for (let i = 0; i < sampleSize; i++) {
+				const idx = Math.floor(Math.random() * allIds.length);
+				const targetId = allIds[idx];
+				effects.addPulse(targetId, 0.45, new THREE.Color(0xffb800), 0.025);
+			}
+			break;
+		}
+
+		case 'ImportanceScored': {
+			// A memory just had its 4-channel importance score recomputed
+			// (novelty + arousal + reward + attention). Magenta pulse on the
+			// scored node with strength proportional to composite score so
+			// users can visually rank importance across the graph.
+			const data = event.data as {
+				id?: string;
+				composite_score?: number;
+			};
+			if (!data.id) break;
+			const pos = nodePositions.get(data.id);
+			if (pos && nodeMeshMap.has(data.id)) {
+				const score = Math.max(0, Math.min(1, data.composite_score ?? 0.5));
+				const strength = 0.3 + score * 0.7;
+				effects.addPulse(data.id, strength, new THREE.Color(0xff3cac), 0.03);
+			}
+			break;
+		}
 	}
 }
