@@ -20,11 +20,21 @@ Built on 130 years of memory research — FSRS-6 spaced repetition, prediction e
 
 ---
 
+## What's New in v2.0.6 "Composer"
+
+v2.0.6 is a polish release that makes the existing cognitive stack finally *feel* alive in the dashboard and stays out of your way on the prompt side.
+
+- **Six live graph reactions, not one** — `MemorySuppressed`, `MemoryUnsuppressed`, `Rac1CascadeSwept`, `Connected`, `ConsolidationStarted`, and `ImportanceScored` now light the 3D graph in real time. v2.0.5 shipped `suppress` but the graph was silent when you called it; consolidation and importance scoring have been silent since v2.0.0. No longer.
+- **Intentions page actually works** — fixes a long-standing bug where every intention rendered as "normal priority" (type/schema drift between backend and frontend) and context/time triggers surfaced as raw JSON.
+- **Opt-in composition mandate** — the new MCP `instructions` string stays minimal by default. Opt in to the full Composing / Never-composed / Recommendation composition protocol with `VESTIGE_SYSTEM_PROMPT_MODE=full` when you want it, and nothing is imposed on your sessions when you don't.
+
 ## What's New in v2.0.5 "Intentional Amnesia"
 
-The first AI memory system that can actively forget. New **`suppress`** tool applies top-down inhibitory control over retrieval — each call compounds a penalty (up to 80%), a background Rac1 worker fades co-activated neighbors over 72h, and it's reversible within a 24h labile window. **Never deletes** — the memory is inhibited, not erased.
+**The first shipped AI memory system with top-down inhibitory control over retrieval.** Other systems implement passive decay — memories fade if you don't touch them. Vestige v2.0.5 also implements *active* suppression: the new **`suppress`** tool compounds a retrieval penalty on every call (up to 80%), a background Rac1 worker fades co-activated neighbors over 72 hours, and the whole thing is reversible within a 24-hour labile window. **Never deletes.** The memory is inhibited, not erased.
 
-Based on [Anderson et al. 2025](https://www.nature.com/articles/s41583-025-00929-y) (Suppression-Induced Forgetting) and [Cervantes-Sandoval et al. 2020](https://pmc.ncbi.nlm.nih.gov/articles/PMC7477079/) (Rac1 synaptic cascade). **24 tools · 30 cognitive modules · 1,284 tests.**
+Ebbinghaus 1885 models what happens to memories you don't touch. Anderson 2025 models what happens when you actively want to stop thinking about one. Every other AI memory system implements the first. Vestige is the first to ship the second.
+
+Based on [Anderson et al. 2025](https://www.nature.com/articles/s41583-025-00929-y) (Suppression-Induced Forgetting, *Nat Rev Neurosci*) and [Cervantes-Sandoval et al. 2020](https://pmc.ncbi.nlm.nih.gov/articles/PMC7477079/) (Rac1 synaptic cascade). **24 tools · 30 cognitive modules · 1,284 tests.**
 
 <details>
 <summary>Earlier releases (v2.0 "Cognitive Leap" → v2.0.4 "Deep Reference")</summary>
@@ -64,19 +74,19 @@ codex mcp add vestige -- /usr/local/bin/vestige-mcp
 <details>
 <summary>Other platforms & install methods</summary>
 
-**macOS (Intel):**
-```bash
-curl -L https://github.com/samvallad33/vestige/releases/latest/download/vestige-mcp-x86_64-apple-darwin.tar.gz | tar -xz
-sudo mv vestige-mcp vestige vestige-restore /usr/local/bin/
-```
-
 **Linux (x86_64):**
 ```bash
 curl -L https://github.com/samvallad33/vestige/releases/latest/download/vestige-mcp-x86_64-unknown-linux-gnu.tar.gz | tar -xz
 sudo mv vestige-mcp vestige vestige-restore /usr/local/bin/
 ```
 
-**Windows:** Download from [Releases](https://github.com/samvallad33/vestige/releases/latest)
+**macOS (Intel) and Windows:** Prebuilt binaries aren't currently shipped for these targets because of upstream toolchain gaps (`ort-sys` lacks Intel Mac prebuilts in the 2.0.0-rc.11 release that `fastembed 5.13.2` is pinned to; `usearch 2.24.0` hit a Windows MSVC compile break tracked as [usearch#746](https://github.com/unum-cloud/usearch/issues/746)). Both build fine from source in the meantime:
+
+```bash
+git clone https://github.com/samvallad33/vestige && cd vestige
+cargo build --release -p vestige-mcp
+# Binary lands at target/release/vestige-mcp
+```
 
 **npm:**
 ```bash
@@ -170,6 +180,7 @@ RAG is a dumb bucket. Vestige is an active organ.
 | **Storage** | Store everything | **Prediction Error Gating** — only stores what's surprising or new |
 | **Retrieval** | Nearest-neighbor | **7-stage pipeline** — HyDE expansion + reranking + spreading activation |
 | **Decay** | Nothing expires | **FSRS-6** — memories fade naturally, context stays lean |
+| **Forgetting** *(v2.0.5)* | Delete only | **`suppress` tool** — compounding top-down inhibition, neighbor cascade, reversible 24h |
 | **Duplicates** | Manual dedup | **Self-healing** — auto-merges "likes dark mode" + "prefers dark themes" |
 | **Importance** | All equal | **4-channel scoring** — novelty, arousal, reward, attention |
 | **Sleep** | No consolidation | **Memory dreaming** — replays, connects, synthesizes insights |
@@ -201,7 +212,7 @@ This isn't a key-value store with an embedding model bolted on. Vestige implemen
 
 **Autonomic Regulation** — Self-regulating memory health. Auto-promotes frequently accessed memories. Auto-GCs low-retention memories. Consolidation triggers on 6h staleness or 2h active use.
 
-**Active Forgetting** *(v2.0.5)* — Top-down inhibitory control via the `suppress` tool, distinct from passive FSRS decay and from bottom-up retrieval-induced forgetting. Each call compounds (Suppression-Induced Forgetting), a background Rac1 cascade worker fades co-activated neighbors, and a 24-hour labile window allows reversal. The memory persists — it's **inhibited, not erased**. Based on [Anderson et al., 2025](https://www.nature.com/articles/s41583-025-00929-y) and [Cervantes-Sandoval et al., 2020](https://pmc.ncbi.nlm.nih.gov/articles/PMC7477079/). First AI memory system to implement this.
+**Active Forgetting** *(v2.0.5)* — Top-down inhibitory control via the `suppress` tool. Other memory systems implement passive decay — the Ebbinghaus 1885 "use it or lose it" curve, sometimes with trust-weighted strength factors. Vestige v2.0.5 also implements *active* top-down suppression: each `suppress` call compounds (Suppression-Induced Forgetting, Anderson 2025), a background Rac1 cascade worker fades co-activated neighbors across the connection graph (Cervantes-Sandoval & Davis 2020), and a 24-hour labile window allows reversal (Nader reconsolidation semantics on a pragmatic axis). The memory persists — it's **inhibited, not erased**. Explicitly distinct from Anderson 1994 retrieval-induced forgetting (bottom-up, passive competition during retrieval), which is a separate, older primitive that several other memory systems implement. Based on [Anderson et al., 2025](https://www.nature.com/articles/s41583-025-00929-y) and [Cervantes-Sandoval et al., 2020](https://pmc.ncbi.nlm.nih.gov/articles/PMC7477079/). First shipped AI memory system with this primitive.
 
 [Full science documentation ->](docs/SCIENCE.md)
 
@@ -304,7 +315,7 @@ At the start of every session:
 | **Transport** | MCP stdio (JSON-RPC 2.0) + WebSocket |
 | **Cognitive modules** | 30 stateful (17 neuroscience, 11 advanced, 2 search) |
 | **First run** | Downloads embedding model (~130MB), then fully offline |
-| **Platforms** | macOS (ARM/Intel), Linux (x86_64), Windows |
+| **Platforms** | macOS ARM + Linux x86_64 (prebuilt). macOS Intel + Windows build from source (upstream toolchain gaps, see install notes). |
 
 ### Optional Features
 
