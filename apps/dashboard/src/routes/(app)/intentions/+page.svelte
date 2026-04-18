@@ -15,18 +15,58 @@
 		snoozed: 'text-dream-glow bg-dream/10 border-dream/30',
 	};
 
-	const PRIORITY_COLORS: Record<string, string> = {
-		critical: 'text-decay',
-		high: 'text-amber-400',
-		normal: 'text-dim',
-		low: 'text-muted',
+	const PRIORITY_LABELS: Record<number, string> = {
+		4: 'critical',
+		3: 'high',
+		2: 'normal',
+		1: 'low',
+	};
+
+	const PRIORITY_COLORS: Record<number, string> = {
+		4: 'text-decay',
+		3: 'text-amber-400',
+		2: 'text-dim',
+		1: 'text-muted',
 	};
 
 	const TRIGGER_ICONS: Record<string, string> = {
 		time: '⏰',
 		context: '◎',
 		event: '⚡',
+		manual: '◇',
 	};
+
+	function summarizeTrigger(intention: IntentionItem): string {
+		// The API returns trigger_data as a JSON-encoded string. Parse it, pick the
+		// most human-readable field, then truncate for display.
+		let result: string;
+		try {
+			const data = JSON.parse(intention.trigger_data || '{}') as Record<string, unknown>;
+			if (typeof data.condition === 'string' && data.condition) {
+				result = data.condition;
+			} else if (typeof data.topic === 'string' && data.topic) {
+				result = data.topic;
+			} else if (typeof data.at === 'string' && data.at) {
+				try {
+					result = new Date(data.at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+				} catch {
+					result = data.at;
+				}
+			} else if (typeof data.in_minutes === 'number') {
+				result = `in ${data.in_minutes} min`;
+			} else if (typeof data.inMinutes === 'number') {
+				result = `in ${data.inMinutes} min`;
+			} else if (typeof data.codebase === 'string' && data.codebase) {
+				const fp = typeof data.filePattern === 'string' && data.filePattern ? `/${data.filePattern}` : '';
+				result = `${data.codebase}${fp}`;
+			} else {
+				result = intention.trigger_type;
+			}
+		} catch {
+			result = intention.trigger_type;
+		}
+		return result.length > 40 ? result.slice(0, 37) + '...' : result;
+	}
 
 	onMount(async () => {
 		await loadData();
@@ -116,13 +156,11 @@
 									</span>
 									<!-- Priority -->
 									<span class="text-[10px] {PRIORITY_COLORS[intention.priority] || 'text-muted'}">
-										{intention.priority} priority
+										{PRIORITY_LABELS[intention.priority] || 'normal'} priority
 									</span>
 									<!-- Trigger -->
 									<span class="text-[10px] text-muted">
-										{intention.trigger_type}: {intention.trigger_value.length > 40
-											? intention.trigger_value.slice(0, 37) + '...'
-											: intention.trigger_value}
+										{intention.trigger_type}: {summarizeTrigger(intention)}
 									</span>
 									{#if intention.deadline}
 										<span class="text-[10px] text-dream-glow">

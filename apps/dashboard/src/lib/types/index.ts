@@ -178,12 +178,12 @@ export interface IntentionItem {
 	id: string;
 	content: string;
 	trigger_type: string;
-	trigger_value: string;
+	trigger_data: string; // JSON-encoded trigger payload (e.g. {"type":"time","at":"..."} )
 	status: string;
-	priority: string;
+	priority: number; // 1=low, 2=normal, 3=high, 4=critical
 	created_at: string;
-	deadline?: string;
-	snoozed_until?: string;
+	deadline?: string | null;
+	snoozed_until?: string | null;
 }
 
 // Node type colors for visualization — bioluminescent palette
