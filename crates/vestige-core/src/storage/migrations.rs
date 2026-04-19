@@ -721,3 +721,71 @@ pub fn apply_migrations(conn: &rusqlite::Connection) -> rusqlite::Result<u32> {
 
     Ok(applied)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A fresh in-memory DB must end up at schema_version = highest migration
+    /// version after `apply_migrations` runs all migrations end-to-end, and
+    /// neither of the dead tables V11 drops must exist afterwards.
+    #[test]
+    fn test_apply_migrations_advances_to_v11_and_drops_dead_tables() {
+        let conn = rusqlite::Connection::open_in_memory().expect("open in-memory");
+
+        // Pre-requisite: schema_version must be bootstrapped by V1.
+        apply_migrations(&conn).expect("apply_migrations succeeds");
+
+        // 1. schema_version advanced to V11
+        let version = get_current_version(&conn).expect("read schema_version");
+        assert_eq!(version, 11, "schema_version must be 11 after all migrations");
+
+        // 2. knowledge_edges is gone (V11 drops it)
+        let knowledge_edges_rows: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='knowledge_edges'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("query sqlite_master");
+        assert_eq!(
+            knowledge_edges_rows, 0,
+            "knowledge_edges table must be dropped by V11"
+        );
+
+        // 3. compressed_memories is gone (V11 drops it)
+        let compressed_memories_rows: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='compressed_memories'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("query sqlite_master");
+        assert_eq!(
+            compressed_memories_rows, 0,
+            "compressed_memories table must be dropped by V11"
+        );
+    }
+
+    /// V11 must be idempotent on replay — if the tables were already dropped
+    /// (e.g. a user ran v2.0.7, downgraded, then upgraded again), re-running
+    /// the migration must not error. `DROP TABLE IF EXISTS` handles this but
+    /// we enforce it with an explicit test so a future refactor to plain
+    /// `DROP TABLE` would be caught.
+    #[test]
+    fn test_v11_is_idempotent_on_replay() {
+        let conn = rusqlite::Connection::open_in_memory().expect("open in-memory");
+        apply_migrations(&conn).expect("first apply_migrations succeeds");
+
+        // Force schema_version back to 10 so V11 runs again even though its
+        // changes are already applied.
+        conn.execute("UPDATE schema_version SET version = 10", [])
+            .expect("rewind schema_version");
+
+        // Replay must not error.
+        apply_migrations(&conn).expect("V11 replay must be idempotent");
+
+        let version = get_current_version(&conn).expect("read schema_version");
+        assert_eq!(version, 11, "schema_version back at 11 after replay");
+    }
+}

@@ -375,4 +375,39 @@ mod tests {
         assert_eq!(value["totalTransitions"], 0);
         assert!(value["transitions"].as_array().unwrap().is_empty());
     }
+
+    /// v2.0.7 hygiene: malformed `start` must return a helpful error instead
+    /// of silently dropping the filter (the pre-v2.0.7 behavior was to
+    /// `#[allow(dead_code)]` the field entirely). Guards against a regression
+    /// where someone unwraps the parse and triggers a panic on bad input.
+    #[tokio::test]
+    async fn test_changelog_malformed_start_returns_error() {
+        let (storage, _dir) = test_storage().await;
+        let args = serde_json::json!({ "start": "not-a-date" });
+        let result = execute(&storage, Some(args)).await;
+        assert!(result.is_err(), "malformed start should error");
+        let err = result.unwrap_err();
+        assert!(
+            err.contains("Invalid start"),
+            "error should name the offending field; got: {}",
+            err
+        );
+        assert!(
+            err.contains("ISO-8601") || err.contains("RFC-3339"),
+            "error should hint at the expected format; got: {}",
+            err
+        );
+    }
+
+    /// The response must echo the applied `start` bound so callers can confirm
+    /// the window was honored. Empty store so filter narrows to 0 events.
+    #[tokio::test]
+    async fn test_changelog_filter_field_echoes_start() {
+        let (storage, _dir) = test_storage().await;
+        let args = serde_json::json!({ "start": "2026-04-19T00:00:00Z" });
+        let result = execute(&storage, Some(args)).await;
+        let value = result.unwrap();
+        assert_eq!(value["filter"]["start"], "2026-04-19T00:00:00+00:00");
+        assert!(value["filter"]["end"].is_null());
+    }
 }

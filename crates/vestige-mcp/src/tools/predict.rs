@@ -260,4 +260,20 @@ mod tests {
         let accuracy = value["prediction_accuracy"].as_f64().unwrap();
         assert!(accuracy >= 0.0);
     }
+
+    /// The happy path must surface `predict_degraded: false`. A regression
+    /// that accidentally hard-coded `true` or dropped the field entirely
+    /// would break downstream callers that rely on the flag to distinguish
+    /// "no predictions because cold start" from "no predictions because
+    /// the system is broken."
+    #[tokio::test]
+    async fn test_predict_degraded_false_on_happy_path() {
+        let (storage, _dir) = test_storage().await;
+        let result = execute(&storage, &test_cognitive(), None).await;
+        let value = result.unwrap();
+        assert_eq!(
+            value["predict_degraded"], false,
+            "fresh cognitive engine should not be degraded"
+        );
+    }
 }
