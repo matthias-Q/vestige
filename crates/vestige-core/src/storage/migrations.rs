@@ -54,6 +54,11 @@ pub const MIGRATIONS: &[Migration] = &[
         description: "v2.0.5 Intentional Amnesia: active forgetting — top-down suppression (Anderson 2025 + Davis Rac1)",
         up: MIGRATION_V10_UP,
     },
+    Migration {
+        version: 11,
+        description: "v2.0.7 Cleanup: drop dead knowledge_edges and compressed_memories tables",
+        up: MIGRATION_V11_UP,
+    },
 ];
 
 /// A database migration
@@ -646,6 +651,34 @@ CREATE INDEX IF NOT EXISTS idx_nodes_suppressed_at
     WHERE suppressed_at IS NOT NULL;
 
 UPDATE schema_version SET version = 10, applied_at = datetime('now');
+"#;
+
+/// V11: v2.0.7 Cleanup — drop tables that were added speculatively and never used
+///
+/// Two tables from V4 were created but never had a single INSERT or SELECT in
+/// the codebase:
+///
+/// 1. `knowledge_edges` — an elaborate bi-temporal edge schema (valid_from,
+///    valid_until, confidence, created_by). Was marked DEPRECATED in the same
+///    V4 migration that created it. The real edge table is `memory_connections`
+///    (V3), which is what the graph traversal code actually uses.
+///
+/// 2. `compressed_memories` — a tiered-compression feature (compression_ratio,
+///    semantic_fidelity, model_used). `advanced/compression.rs` operates
+///    entirely in-memory and never touches this table. Dropping the schema
+///    frees space for future migrations and removes dead schema debt.
+///
+/// Both tables are verified single-file references (only in migrations.rs).
+/// A grep across the entire crates/ tree shows zero INSERT, SELECT, or row
+/// mapping against either table. Safe to drop without behaviour change.
+const MIGRATION_V11_UP: &str = r#"
+-- Drop the never-used bi-temporal edge table (real edges live in memory_connections).
+DROP TABLE IF EXISTS knowledge_edges;
+
+-- Drop the never-used compression table (compression.rs is in-memory only).
+DROP TABLE IF EXISTS compressed_memories;
+
+UPDATE schema_version SET version = 11, applied_at = datetime('now');
 "#;
 
 /// Get current schema version from database
