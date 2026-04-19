@@ -93,13 +93,21 @@
 			// real errors (network down, dashboard disabled, 500s) and looked
 			// identical to a first-run install. Split the two so debugging
 			// isn't a guessing game.
-			const msg = e instanceof Error ? e.message : String(e);
+			//
+			// Sanitize the error string before rendering: strip filesystem
+			// paths and crate-file references (the backend occasionally wraps
+			// raw rusqlite / fs errors) and cap length at 200 chars so a
+			// stack-trace-sized error doesn't dominate the page.
+			const rawMsg = e instanceof Error ? e.message : String(e);
+			const safeMsg = rawMsg
+				.replace(/\/[\w./-]+\.(sqlite|rs|db|toml|lock)\b/g, '[path]')
+				.slice(0, 200);
 			const isEmpty =
 				(graphData?.nodeCount ?? 0) === 0 &&
-				/not found|404|empty|no memor/i.test(msg);
+				/not found|404|empty|no memor/i.test(rawMsg);
 			error = isEmpty
 				? 'No memories yet. Start using Vestige to populate your graph.'
-				: `Failed to load graph: ${msg}`;
+				: `Failed to load graph: ${safeMsg}`;
 		} finally {
 			loading = false;
 		}

@@ -517,6 +517,7 @@ async fn execute_check(
         let item = serde_json::json!({
             "id": intention.id,
             "description": intention.content,
+            "status": intention.status,
             "priority": match intention.priority {
                 1 => "low",
                 3 => "high",
@@ -525,6 +526,7 @@ async fn execute_check(
             },
             "createdAt": intention.created_at.to_rfc3339(),
             "deadline": intention.deadline.map(|d| d.to_rfc3339()),
+            "snoozedUntil": intention.snoozed_until.map(|d| d.to_rfc3339()),
             "isOverdue": is_overdue,
         });
 
@@ -1438,5 +1440,103 @@ mod tests {
         let schema_value = schema();
         assert!(schema_value["properties"]["filter_status"].is_object());
         assert!(schema_value["properties"]["limit"].is_object());
+    }
+
+    // ========================================================================
+    // v2.0.7 REGRESSION COVERAGE — include_snoozed actually wires through
+    // ========================================================================
+
+    /// `include_snoozed=true` must fold snoozed intentions back into the
+    /// check pool so their triggers can still fire. Before v2.0.7 the flag
+    /// was schema-advertised but runtime-ignored.
+    #[tokio::test]
+    async fn test_check_includes_snoozed_when_flag_set() {
+        let (storage, _dir) = test_storage().await;
+
+        // Create an intention, then snooze it.
+        let id = create_test_intention(&storage, "snoozed test intention").await;
+        let snooze_args = serde_json::json!({
+            "action": "update",
+            "id": id,
+            "status": "snooze",
+            "snooze_minutes": 1
+        });
+        execute(&storage, &test_cognitive(), Some(snooze_args))
+            .await
+            .unwrap();
+
+        // Check with include_snoozed=true; snoozed intention should appear
+        // in either triggered or pending.
+        let check_args = serde_json::json!({
+            "action": "check",
+            "include_snoozed": true
+        });
+        let result = execute(&storage, &test_cognitive(), Some(check_args))
+            .await
+            .unwrap();
+        let triggered = result["triggered"].as_array().unwrap();
+        let pending = result["pending"].as_array().unwrap();
+        let appears_anywhere = triggered
+            .iter()
+            .chain(pending.iter())
+            .any(|v| v["id"].as_str() == Some(id.as_str()));
+        assert!(
+            appears_anywhere,
+            "snoozed intention should be visible when include_snoozed=true"
+        );
+    }
+
+    /// Default (include_snoozed omitted) must NOT surface snoozed intentions
+    /// — this preserves the pre-v2.0.7 behavior for every caller that
+    /// doesn't opt in.
+    #[tokio::test]
+    async fn test_check_excludes_snoozed_by_default() {
+        let (storage, _dir) = test_storage().await;
+
+        let id = create_test_intention(&storage, "default-excluded snoozed intention").await;
+        let snooze_args = serde_json::json!({
+            "action": "update",
+            "id": id,
+            "status": "snooze",
+            "snooze_minutes": 1
+        });
+        execute(&storage, &test_cognitive(), Some(snooze_args))
+            .await
+            .unwrap();
+
+        // Default check — no include_snoozed in args.
+        let check_args = serde_json::json!({ "action": "check" });
+        let result = execute(&storage, &test_cognitive(), Some(check_args))
+            .await
+            .unwrap();
+        let triggered = result["triggered"].as_array().unwrap();
+        let pending = result["pending"].as_array().unwrap();
+        let appears_anywhere = triggered
+            .iter()
+            .chain(pending.iter())
+            .any(|v| v["id"].as_str() == Some(id.as_str()));
+        assert!(
+            !appears_anywhere,
+            "snoozed intention must NOT surface without include_snoozed=true"
+        );
+    }
+
+    /// v2.0.7 also adds a `status` field to each check-result item so
+    /// callers can tell active-triggered from snoozed-overdue. Verify the
+    /// field is present and reflects the real storage state.
+    #[tokio::test]
+    async fn test_check_item_exposes_status_field() {
+        let (storage, _dir) = test_storage().await;
+        let _id = create_test_intention(&storage, "status-field test").await;
+        let check_args = serde_json::json!({ "action": "check" });
+        let result = execute(&storage, &test_cognitive(), Some(check_args))
+            .await
+            .unwrap();
+        let pending = result["pending"].as_array().unwrap();
+        assert!(!pending.is_empty(), "setup should produce one pending item");
+        assert_eq!(
+            pending[0]["status"], "active",
+            "freshly-created intention must report status=\"active\""
+        );
     }
 }
