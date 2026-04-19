@@ -67,20 +67,62 @@ pub async fn execute(
             ),
     };
 
-    // Get predictions from predictive memory
+    // Get predictions from predictive memory.
+    //
+    // Each of these four calls can fail (lock poisoning, internal PredictiveMemory
+    // errors). Before v2.0.7 the failures were silently swallowed by
+    // `unwrap_or_default()`, producing an empty response that was indistinguishable
+    // from a genuine cold-start "I don't have any predictions yet" state. That
+    // ambiguity is a user-visible bug: callers can't tell "model is degraded"
+    // from "nothing to predict." Now we track whether ANY call errored and expose
+    // it as `predict_degraded: true` in the response, with per-channel errors
+    // logged via `tracing::warn!` for observability.
+    let mut degraded = false;
     let predictions = cog
         .predictive_memory
         .predict_needed_memories(&session_ctx)
-        .unwrap_or_default();
+        .unwrap_or_else(|e| {
+            tracing::warn!(
+                target: "vestige::predict",
+                error = %e,
+                "predict_needed_memories failed; returning empty predictions"
+            );
+            degraded = true;
+            Vec::new()
+        });
     let suggestions = cog
         .predictive_memory
         .get_proactive_suggestions(0.3)
-        .unwrap_or_default();
+        .unwrap_or_else(|e| {
+            tracing::warn!(
+                target: "vestige::predict",
+                error = %e,
+                "get_proactive_suggestions failed; returning empty suggestions"
+            );
+            degraded = true;
+            Vec::new()
+        });
     let top_interests = cog
         .predictive_memory
         .get_top_interests(10)
-        .unwrap_or_default();
-    let accuracy = cog.predictive_memory.prediction_accuracy().unwrap_or(0.0);
+        .unwrap_or_else(|e| {
+            tracing::warn!(
+                target: "vestige::predict",
+                error = %e,
+                "get_top_interests failed; returning empty interests"
+            );
+            degraded = true;
+            Vec::new()
+        });
+    let accuracy = cog.predictive_memory.prediction_accuracy().unwrap_or_else(|e| {
+        tracing::warn!(
+            target: "vestige::predict",
+            error = %e,
+            "prediction_accuracy failed; returning 0.0"
+        );
+        degraded = true;
+        0.0
+    });
 
     // Build speculative context
     let speculative_context = vestige_core::PredictionContext {
@@ -123,6 +165,13 @@ pub async fn execute(
         })).collect::<Vec<_>>(),
         "top_interests": top_interests,
         "prediction_accuracy": accuracy,
+        // predict_degraded == true means at least one of the four underlying
+        // PredictiveMemory calls errored (lock poisoning, internal failure)
+        // and the corresponding field above was substituted with an empty
+        // default. Callers should treat an empty response as "genuinely nothing
+        // to predict" only when predict_degraded is false. See tracing logs
+        // under target "vestige::predict" for per-channel error details.
+        "predict_degraded": degraded,
     }))
 }
 
