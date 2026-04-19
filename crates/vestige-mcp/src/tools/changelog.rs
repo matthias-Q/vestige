@@ -46,9 +46,7 @@ pub fn schema() -> Value {
 struct ChangelogArgs {
     #[serde(alias = "memory_id")]
     memory_id: Option<String>,
-    #[allow(dead_code)]
     start: Option<String>,
-    #[allow(dead_code)]
     end: Option<String>,
     limit: Option<i32>,
 }
@@ -67,12 +65,36 @@ pub async fn execute(storage: &Arc<Storage>, args: Option<Value>) -> Result<Valu
 
     let limit = args.limit.unwrap_or(20).clamp(1, 100);
 
+    // Parse the optional ISO-8601 time bounds. These were advertised in the
+    // schema since v1.7 but silently ignored until v2.0.7 — any caller that
+    // set them was getting unfiltered results with no warning.
+    let start_ts = parse_iso_bound(args.start.as_deref(), "start")?;
+    let end_ts = parse_iso_bound(args.end.as_deref(), "end")?;
+
     if let Some(ref memory_id) = args.memory_id {
-        // Per-memory mode: state transitions for a specific memory
+        // Per-memory mode: state transitions for a specific memory.
+        // start/end are only meaningful in system-wide mode; ignored here.
         execute_per_memory(storage, memory_id, limit)
     } else {
-        // System-wide mode: consolidations + recent transitions
-        execute_system_wide(storage, limit)
+        // System-wide mode: consolidations + recent transitions, optionally
+        // time-bounded by start/end.
+        execute_system_wide(storage, limit, start_ts, end_ts)
+    }
+}
+
+/// Parse an ISO-8601 timestamp bound, returning a helpful error on bad input
+/// instead of silently dropping the filter.
+fn parse_iso_bound(raw: Option<&str>, field: &str) -> Result<Option<DateTime<Utc>>, String> {
+    match raw {
+        Some(s) if !s.is_empty() => DateTime::parse_from_rfc3339(s)
+            .map(|dt| Some(dt.with_timezone(&Utc)))
+            .map_err(|e| {
+                format!(
+                    "Invalid {} timestamp {:?}: {}. Use ISO-8601 / RFC-3339 (e.g. 2026-04-19T12:00:00Z).",
+                    field, s, e
+                )
+            }),
+        _ => Ok(None),
     }
 }
 
@@ -118,20 +140,42 @@ fn execute_per_memory(storage: &Storage, memory_id: &str, limit: i32) -> Result<
     }))
 }
 
-/// System-wide changelog: consolidations + recent state transitions
-fn execute_system_wide(storage: &Storage, limit: i32) -> Result<Value, String> {
+/// System-wide changelog: consolidations + recent state transitions.
+///
+/// `start`/`end` optionally bound the returned events to an inclusive
+/// time window. Filtering happens in Rust after the DB reads because
+/// the underlying storage helpers don't yet take time parameters —
+/// moving the filter into SQL is a v2.1+ optimisation (tracked in the
+/// v2.0.7 scope notes). For now we over-fetch (up to 4× `limit`) when
+/// a window is supplied so filtering doesn't starve the result set.
+fn execute_system_wide(
+    storage: &Storage,
+    limit: i32,
+    start: Option<DateTime<Utc>>,
+    end: Option<DateTime<Utc>>,
+) -> Result<Value, String> {
+    // When a window is supplied we can't predict how many events fall inside,
+    // so over-fetch to reduce the chance of returning an empty page on a
+    // long-tail time range. 4× is arbitrary; revisit if it becomes a cost
+    // on very large changelog tables.
+    let fetch_limit = if start.is_some() || end.is_some() {
+        limit.saturating_mul(4)
+    } else {
+        limit
+    };
+
     // Get consolidation history
     let consolidations = storage
-        .get_consolidation_history(limit)
+        .get_consolidation_history(fetch_limit)
         .map_err(|e| e.to_string())?;
 
     // Get recent state transitions across all memories
     let transitions = storage
-        .get_recent_state_transitions(limit)
+        .get_recent_state_transitions(fetch_limit)
         .map_err(|e| e.to_string())?;
 
     // Get dream history (Bug #9 fix — dreams were invisible to audit trail)
-    let dreams = storage.get_dream_history(limit).unwrap_or_default();
+    let dreams = storage.get_dream_history(fetch_limit).unwrap_or_default();
 
     // Build unified event list
     let mut events: Vec<(DateTime<Utc>, Value)> = Vec::new();
@@ -181,6 +225,17 @@ fn execute_system_wide(storage: &Storage, limit: i32) -> Result<Value, String> {
         ));
     }
 
+    // Apply the optional [start, end] window. `start` is inclusive, `end`
+    // is inclusive — matches "show me events between these two wall-clock
+    // instants" user expectation.
+    if start.is_some() || end.is_some() {
+        events.retain(|(ts, _)| {
+            let after_start = start.is_none_or(|s| *ts >= s);
+            let before_end = end.is_none_or(|e| *ts <= e);
+            after_start && before_end
+        });
+    }
+
     // Sort by timestamp descending
     events.sort_by(|a, b| b.0.cmp(&a.0));
 
@@ -194,6 +249,10 @@ fn execute_system_wide(storage: &Storage, limit: i32) -> Result<Value, String> {
         "mode": "system_wide",
         "totalEvents": formatted_events.len(),
         "events": formatted_events,
+        "filter": serde_json::json!({
+            "start": start.map(|s| s.to_rfc3339()),
+            "end": end.map(|e| e.to_rfc3339()),
+        }),
     }))
 }
 

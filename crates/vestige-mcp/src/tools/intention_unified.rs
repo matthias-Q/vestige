@@ -435,8 +435,27 @@ async fn execute_check(
         let _ = cog.prospective_memory.update_context(prospective_ctx);
     }
 
-    // Get active intentions
-    let intentions = storage.get_active_intentions().map_err(|e| e.to_string())?;
+    // Get active intentions. `include_snoozed=true` folds snoozed intentions
+    // back into the check pool so time/context triggers can wake them up when
+    // their snooze window has elapsed or a matching context appears — before
+    // v2.0.7 this flag was advertised in the schema but silently ignored, so
+    // snoozed intentions were invisible to `check` regardless of the arg.
+    let mut intentions = storage.get_active_intentions().map_err(|e| e.to_string())?;
+    if args.include_snoozed.unwrap_or(false) {
+        let snoozed = storage
+            .get_intentions_by_status("snoozed")
+            .map_err(|e| e.to_string())?;
+        // Deduplicate defensively — an intention should never be in both lists
+        // but we pay the O(n) hash-set cost to stay correct if storage semantics
+        // shift under us.
+        use std::collections::HashSet;
+        let seen: HashSet<String> = intentions.iter().map(|i| i.id.clone()).collect();
+        for s in snoozed {
+            if !seen.contains(&s.id) {
+                intentions.push(s);
+            }
+        }
+    }
 
     let mut triggered = Vec::new();
     let mut pending = Vec::new();
