@@ -87,8 +87,19 @@
 				liveNodeCount = graphData.nodeCount;
 				liveEdgeCount = graphData.edgeCount;
 			}
-		} catch {
-			error = 'No memories yet. Start using Vestige to populate your graph.';
+		} catch (e) {
+			// Distinguish "cold-start / empty database" from "actual API failure".
+			// Before v2.0.7 both surfaced as "No memories yet..." which masked
+			// real errors (network down, dashboard disabled, 500s) and looked
+			// identical to a first-run install. Split the two so debugging
+			// isn't a guessing game.
+			const msg = e instanceof Error ? e.message : String(e);
+			const isEmpty =
+				(graphData?.nodeCount ?? 0) === 0 &&
+				/not found|404|empty|no memor/i.test(msg);
+			error = isEmpty
+				? 'No memories yet. Start using Vestige to populate your graph.'
+				: `Failed to load graph: ${msg}`;
 		} finally {
 			loading = false;
 		}
