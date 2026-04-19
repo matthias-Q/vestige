@@ -209,7 +209,9 @@ impl McpServer {
 
     /// Handle tools/list request
     async fn handle_tools_list(&self) -> Result<serde_json::Value, JsonRpcError> {
-        // v2.0.4: 23 tools. Deprecated tools still work via redirects in handle_tools_call.
+        // v2.0.5+: 24 tools (verified by the `tools.len() == 24` assertion in the
+        // handle_tools_list test below — the `suppress` tool landed in v2.0.5).
+        // Deprecated tools still work via redirects in handle_tools_call.
         let tools = vec![
             // ================================================================
             // UNIFIED TOOLS (v1.1+)
