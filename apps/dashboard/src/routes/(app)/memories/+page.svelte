@@ -130,6 +130,22 @@
 								<span role="button" tabindex="0" onclick={(e) => { e.stopPropagation(); api.memories.demote(memory.id); }}
 									onkeydown={(e) => { if (e.key === 'Enter') { e.stopPropagation(); api.memories.demote(memory.id); } }}
 									class="px-3 py-1.5 bg-decay/20 text-decay text-xs rounded-lg hover:bg-decay/30 cursor-pointer select-none">Demote</span>
+								<!-- v2.0.7: suppress (active forgetting). Distinct from delete: the memory
+									 persists but is inhibited from retrieval and actively decays. Each click
+									 compounds. Graph plays the violet implosion via MemorySuppressed event. -->
+								<span role="button" tabindex="0"
+									onclick={async (e) => {
+										e.stopPropagation();
+										await api.memories.suppress(memory.id, 'dashboard trigger');
+									}}
+									onkeydown={async (e) => {
+										if (e.key === 'Enter') {
+											e.stopPropagation();
+											await api.memories.suppress(memory.id, 'dashboard trigger');
+										}
+									}}
+									title="Top-down inhibition (Anderson 2025). Compounds. Reversible for 24h."
+									class="px-3 py-1.5 bg-purple-500/20 text-purple-400 text-xs rounded-lg hover:bg-purple-500/30 cursor-pointer select-none">Suppress</span>
 								<span role="button" tabindex="0" onclick={async (e) => { e.stopPropagation(); await api.memories.delete(memory.id); loadMemories(); }}
 									onkeydown={async (e) => { if (e.key === 'Enter') { e.stopPropagation(); await api.memories.delete(memory.id); loadMemories(); } }}
 									class="px-3 py-1.5 bg-decay/10 text-decay/60 text-xs rounded-lg hover:bg-decay/20 ml-auto cursor-pointer select-none">Delete</span>

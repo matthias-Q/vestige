@@ -10,7 +10,9 @@ import type {
 	ImportanceScore,
 	RetentionDistribution,
 	ConsolidationResult,
-	IntentionItem
+	IntentionItem,
+	SuppressResult,
+	UnsuppressResult
 } from '$types';
 
 const BASE = '/api';
@@ -34,7 +36,18 @@ export const api = {
 		get: (id: string) => fetcher<Memory>(`/memories/${id}`),
 		delete: (id: string) => fetcher<{ deleted: boolean }>(`/memories/${id}`, { method: 'DELETE' }),
 		promote: (id: string) => fetcher<Memory>(`/memories/${id}/promote`, { method: 'POST' }),
-		demote: (id: string) => fetcher<Memory>(`/memories/${id}/demote`, { method: 'POST' })
+		demote: (id: string) => fetcher<Memory>(`/memories/${id}/demote`, { method: 'POST' }),
+		// v2.0.7: suppress + unsuppress. Anderson 2025 top-down inhibitory
+		// control. Each suppress call compounds; reversible within 24h. The
+		// backend emits MemorySuppressed / MemoryUnsuppressed so the 3D graph
+		// plays the violet implosion / rainbow reversal.
+		suppress: (id: string, reason?: string) =>
+			fetcher<SuppressResult>(`/memories/${id}/suppress`, {
+				method: 'POST',
+				body: reason ? JSON.stringify({ reason }) : undefined
+			}),
+		unsuppress: (id: string) =>
+			fetcher<UnsuppressResult>(`/memories/${id}/unsuppress`, { method: 'POST' })
 	},
 
 	// Search

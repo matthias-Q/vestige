@@ -138,6 +138,15 @@ fn build_router_inner(state: AppState, port: u16) -> (Router, AppState) {
         .route("/api/memories/{id}", delete(handlers::delete_memory))
         .route("/api/memories/{id}/promote", post(handlers::promote_memory))
         .route("/api/memories/{id}/demote", post(handlers::demote_memory))
+        // v2.0.7: active-forgetting HTTP surface. `suppress` was MCP-only
+        // since v2.0.5 despite having full graph event handlers; this closes
+        // the gap so dashboard users can trigger inhibition without dropping
+        // to the MCP layer.
+        .route("/api/memories/{id}/suppress", post(handlers::suppress_memory))
+        .route(
+            "/api/memories/{id}/unsuppress",
+            post(handlers::unsuppress_memory),
+        )
         // Search
         .route("/api/search", get(handlers::search_memories))
         // Stats & health

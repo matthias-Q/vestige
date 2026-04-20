@@ -173,6 +173,34 @@ export interface VestigeEvent {
 	data: Record<string, unknown>;
 }
 
+// v2.0.7: active-forgetting response shapes. Each suppress call COMPOUNDS;
+// `suppressionCount` is the lifetime total. `reversibleUntil` is the ISO
+// timestamp after which the labile window closes and the suppression locks in.
+export interface SuppressResult {
+	suppressed: true;
+	id: string;
+	suppressionCount: number;
+	priorCount: number;
+	retrievalPenalty: number;
+	retentionStrength: number;
+	retrievalStrength: number;
+	stability: number;
+	estimatedCascadeNeighbors: number;
+	reversibleUntil: string;
+	labileWindowHours: number;
+	reason: string | null;
+}
+
+export interface UnsuppressResult {
+	unsuppressed: true;
+	id: string;
+	suppressionCount: number;
+	stillSuppressed: boolean;
+	retentionStrength: number;
+	retrievalStrength: number;
+	stability: number;
+}
+
 // Intentions (prospective memory)
 export interface IntentionItem {
 	id: string;

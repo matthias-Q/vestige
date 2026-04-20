@@ -217,6 +217,129 @@ pub async fn demote_memory(
     })))
 }
 
+/// Actively suppress a memory via top-down inhibitory control.
+///
+/// Optional JSON body: `{"reason": "..."}`. Each call compounds — the
+/// `suppression_count` field on the memory increments, FSRS takes a hit,
+/// and the background Rac1 worker fades co-activated neighbors over the
+/// next 72 hours. Emits a `MemorySuppressed` event so the 3D graph plays
+/// the violet implosion animation.
+///
+/// Reversible within the 24-hour labile window via `unsuppress_memory`.
+///
+/// Fixes the v2.0.5 UI gap: `suppress` had full graph event handlers and
+/// MCP tool exposure, but zero HTTP endpoint and no dashboard trigger.
+pub async fn suppress_memory(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    body: Option<Json<Value>>,
+) -> Result<Json<Value>, StatusCode> {
+    use vestige_core::neuroscience::active_forgetting::{
+        ActiveForgettingSystem, DEFAULT_LABILE_HOURS,
+    };
+
+    let reason = body
+        .as_ref()
+        .and_then(|Json(v)| v.get("reason"))
+        .and_then(|r| r.as_str())
+        .map(String::from);
+
+    let sys = ActiveForgettingSystem::new();
+
+    // Pre-count to surface in the response + for the event payload.
+    let before_count = state
+        .storage
+        .get_node(&id)
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .map(|n| n.suppression_count)
+        .unwrap_or(0);
+
+    let node = state
+        .storage
+        .suppress_memory(&id)
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    // Estimate cascade size for the UX; capped at 100 so the number is
+    // stable even on highly-connected nodes.
+    let estimated_cascade = state
+        .storage
+        .get_connections_for_memory(&id)
+        .map(|edges| edges.len().min(100))
+        .unwrap_or(0);
+
+    let reversible_until = node
+        .suppressed_at
+        .map(|t| sys.reversible_until(t))
+        .unwrap_or_else(chrono::Utc::now);
+    let retrieval_penalty = sys.retrieval_penalty(node.suppression_count);
+
+    tracing::info!(
+        id = %id,
+        count = node.suppression_count,
+        reason = reason.as_deref().unwrap_or(""),
+        "Memory suppressed via dashboard"
+    );
+
+    state.emit(VestigeEvent::MemorySuppressed {
+        id: node.id.clone(),
+        suppression_count: node.suppression_count,
+        estimated_cascade,
+        reversible_until,
+        timestamp: chrono::Utc::now(),
+    });
+
+    Ok(Json(serde_json::json!({
+        "suppressed": true,
+        "id": node.id,
+        "suppressionCount": node.suppression_count,
+        "priorCount": before_count,
+        "retrievalPenalty": retrieval_penalty,
+        "retentionStrength": node.retention_strength,
+        "retrievalStrength": node.retrieval_strength,
+        "stability": node.stability,
+        "estimatedCascadeNeighbors": estimated_cascade,
+        "reversibleUntil": reversible_until.to_rfc3339(),
+        "labileWindowHours": DEFAULT_LABILE_HOURS,
+        "reason": reason,
+    })))
+}
+
+/// Reverse a prior suppression, if still inside the 24-hour labile
+/// window. Emits `MemoryUnsuppressed` so the graph plays the rainbow
+/// reversal burst. Returns the current suppression state so the UI
+/// knows whether a single click fully cleared the suppression or whether
+/// the memory still has compounded suppressions remaining.
+pub async fn unsuppress_memory(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> Result<Json<Value>, StatusCode> {
+    use vestige_core::neuroscience::active_forgetting::ActiveForgettingSystem;
+
+    let sys = ActiveForgettingSystem::new();
+    let node = state
+        .storage
+        .reverse_suppression(&id, sys.labile_hours)
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    let still_suppressed = node.suppression_count > 0;
+
+    state.emit(VestigeEvent::MemoryUnsuppressed {
+        id: node.id.clone(),
+        remaining_count: node.suppression_count,
+        timestamp: chrono::Utc::now(),
+    });
+
+    Ok(Json(serde_json::json!({
+        "unsuppressed": true,
+        "id": node.id,
+        "suppressionCount": node.suppression_count,
+        "stillSuppressed": still_suppressed,
+        "retentionStrength": node.retention_strength,
+        "retrievalStrength": node.retrieval_strength,
+        "stability": node.stability,
+    })))
+}
+
 /// Get system stats
 pub async fn get_stats(State(state): State<AppState>) -> Result<Json<Value>, StatusCode> {
     let stats = state
