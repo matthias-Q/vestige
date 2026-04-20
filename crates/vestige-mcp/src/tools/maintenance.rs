@@ -459,7 +459,18 @@ pub async fn execute_export(storage: &Arc<Storage>, args: Option<Value>) -> Resu
                 writer.write_all(b"\n").map_err(|e| e.to_string())?;
             }
         }
-        _ => unreachable!(),
+        // Defensive: the `format != "json" && format != "jsonl"` early-return
+        // above should already catch every unsupported format, but that gate is
+        // at the arg-validation layer. If it ever grows a bug (e.g. case
+        // sensitivity drift, a new branch, refactor) we return a clean error
+        // instead of `unreachable!()` — no panic can reach a user via the MCP
+        // dispatcher.
+        other => {
+            return Err(format!(
+                "unsupported export format: {:?}. Expected 'json' or 'jsonl'.",
+                other
+            ));
+        }
     }
     writer.flush().map_err(|e| e.to_string())?;
 
