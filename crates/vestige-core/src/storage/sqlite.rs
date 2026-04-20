@@ -2077,61 +2077,77 @@ impl Storage {
         Ok(result)
     }
 
-    /// Query memories created/modified in a time range
+    /// Query memories created/modified in a time range, optionally filtered by
+    /// `node_type` and/or `tags`.
+    ///
+    /// All filters are pushed into the SQL `WHERE` clause so that `LIMIT` is
+    /// applied AFTER filtering. If filters were applied in Rust after `LIMIT`,
+    /// sparse types/tags could be crowded out by a dominant set within the
+    /// limit window — e.g. a query for a rare tag against a corpus where
+    /// every day has hundreds of rows with a common tag would return 0
+    /// matches after `LIMIT` crowded the rare-tag rows out.
+    ///
+    /// Tag filtering uses `tags LIKE '%"tag"%'` — an exact-match JSON pattern
+    /// that keys off the quote characters around each tag in the stored JSON
+    /// array. This avoids the substring-match false positive where `alpha`
+    /// would otherwise match `alphabet`.
     pub fn query_time_range(
         &self,
         start: Option<DateTime<Utc>>,
         end: Option<DateTime<Utc>>,
         limit: i32,
+        node_type: Option<&str>,
+        tags: Option<&[String]>,
     ) -> Result<Vec<KnowledgeNode>> {
         let start_str = start.map(|dt| dt.to_rfc3339());
         let end_str = end.map(|dt| dt.to_rfc3339());
 
-        let (query, params): (&str, Vec<Box<dyn rusqlite::ToSql>>) = match (&start_str, &end_str) {
-            (Some(s), Some(e)) => (
-                "SELECT * FROM knowledge_nodes
-                 WHERE created_at >= ?1 AND created_at <= ?2
-                 ORDER BY created_at DESC
-                 LIMIT ?3",
-                vec![
-                    Box::new(s.clone()) as Box<dyn rusqlite::ToSql>,
-                    Box::new(e.clone()) as Box<dyn rusqlite::ToSql>,
-                    Box::new(limit) as Box<dyn rusqlite::ToSql>,
-                ],
-            ),
-            (Some(s), None) => (
-                "SELECT * FROM knowledge_nodes
-                 WHERE created_at >= ?1
-                 ORDER BY created_at DESC
-                 LIMIT ?2",
-                vec![
-                    Box::new(s.clone()) as Box<dyn rusqlite::ToSql>,
-                    Box::new(limit) as Box<dyn rusqlite::ToSql>,
-                ],
-            ),
-            (None, Some(e)) => (
-                "SELECT * FROM knowledge_nodes
-                 WHERE created_at <= ?1
-                 ORDER BY created_at DESC
-                 LIMIT ?2",
-                vec![
-                    Box::new(e.clone()) as Box<dyn rusqlite::ToSql>,
-                    Box::new(limit) as Box<dyn rusqlite::ToSql>,
-                ],
-            ),
-            (None, None) => (
-                "SELECT * FROM knowledge_nodes
-                 ORDER BY created_at DESC
-                 LIMIT ?1",
-                vec![Box::new(limit) as Box<dyn rusqlite::ToSql>],
-            ),
+        let mut conditions: Vec<String> = Vec::new();
+        let mut params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+        let mut idx = 1;
+
+        if let Some(ref s) = start_str {
+            conditions.push(format!("created_at >= ?{}", idx));
+            params.push(Box::new(s.clone()) as Box<dyn rusqlite::ToSql>);
+            idx += 1;
+        }
+        if let Some(ref e) = end_str {
+            conditions.push(format!("created_at <= ?{}", idx));
+            params.push(Box::new(e.clone()) as Box<dyn rusqlite::ToSql>);
+            idx += 1;
+        }
+        if let Some(nt) = node_type {
+            conditions.push(format!("LOWER(node_type) = LOWER(?{})", idx));
+            params.push(Box::new(nt.to_string()) as Box<dyn rusqlite::ToSql>);
+            idx += 1;
+        }
+        if let Some(tag_list) = tags.filter(|t| !t.is_empty()) {
+            let mut tag_conditions = Vec::new();
+            for tag in tag_list {
+                tag_conditions.push(format!("tags LIKE ?{}", idx));
+                params.push(Box::new(format!("%\"{}\"%", tag)) as Box<dyn rusqlite::ToSql>);
+                idx += 1;
+            }
+            conditions.push(format!("({})", tag_conditions.join(" OR ")));
+        }
+
+        let where_clause = if conditions.is_empty() {
+            String::new()
+        } else {
+            format!("WHERE {}", conditions.join(" AND "))
         };
+
+        let query = format!(
+            "SELECT * FROM knowledge_nodes {} ORDER BY created_at DESC LIMIT ?{}",
+            where_clause, idx
+        );
+        params.push(Box::new(limit) as Box<dyn rusqlite::ToSql>);
 
         let reader = self
             .reader
             .lock()
             .map_err(|_| StorageError::Init("Reader lock poisoned".into()))?;
-        let mut stmt = reader.prepare(query)?;
+        let mut stmt = reader.prepare(&query)?;
         let params_refs: Vec<&dyn rusqlite::ToSql> = params.iter().map(|p| p.as_ref()).collect();
         let nodes = stmt.query_map(params_refs.as_slice(), Self::row_to_node)?;
 
