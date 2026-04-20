@@ -105,3 +105,24 @@ export const avgRetention = derived(websocket, $ws =>
 export const suppressedCount = derived(websocket, $ws =>
 	($ws.lastHeartbeat?.data?.suppressed_count as number) ?? 0
 );
+
+// v2.0.7: uptime of the MCP server in seconds, refreshed every heartbeat.
+// Exposed raw so callers can format as they like; the helper below is the
+// standard compact format ("3d 4h 22m", "18m", "47s") used in the sidebar.
+export const uptimeSeconds = derived(websocket, $ws =>
+	($ws.lastHeartbeat?.data?.uptime_secs as number) ?? 0
+);
+
+export function formatUptime(secs: number): string {
+	if (!Number.isFinite(secs) || secs < 0) return '—';
+	const d = Math.floor(secs / 86_400);
+	const h = Math.floor((secs % 86_400) / 3_600);
+	const m = Math.floor((secs % 3_600) / 60);
+	const s = Math.floor(secs % 60);
+	// Compact representation: show the two most significant units so the
+	// sidebar stays readable ("3d 4h" not "3d 4h 22m 17s", "18m 43s", etc).
+	if (d > 0) return h > 0 ? `${d}d ${h}h` : `${d}d`;
+	if (h > 0) return m > 0 ? `${h}h ${m}m` : `${h}h`;
+	if (m > 0) return s > 0 ? `${m}m ${s}s` : `${m}m`;
+	return `${s}s`;
+}

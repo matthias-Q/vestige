@@ -4,7 +4,15 @@
 	import { page } from '$app/stores';
 	import { goto } from '$app/navigation';
 	import { base } from '$app/paths';
-	import { websocket, isConnected, memoryCount, avgRetention, suppressedCount } from '$stores/websocket';
+	import {
+		websocket,
+		isConnected,
+		memoryCount,
+		avgRetention,
+		suppressedCount,
+		uptimeSeconds,
+		formatUptime,
+	} from '$stores/websocket';
 	import ForgettingIndicator from '$lib/components/ForgettingIndicator.svelte';
 
 	let { children } = $props();
@@ -141,9 +149,14 @@
 				<div class="w-2 h-2 rounded-full {$isConnected ? 'bg-recall animate-pulse-glow' : 'bg-decay'}"></div>
 				<span class="hidden lg:block text-dim">{$isConnected ? 'Connected' : 'Offline'}</span>
 			</div>
-			<div class="hidden lg:block text-xs text-muted">
+			<div class="hidden lg:block text-xs text-muted space-y-0.5">
 				<div>{$memoryCount} memories</div>
 				<div>{($avgRetention * 100).toFixed(0)}% retention</div>
+				<!-- v2.0.7: surface uptime_secs from the Heartbeat event. Fires
+					 every 30s so this self-refreshes. "up 3d 4h" format. -->
+				{#if $uptimeSeconds > 0}
+					<div title="MCP server uptime">up {formatUptime($uptimeSeconds)}</div>
+				{/if}
 			</div>
 			{#if $suppressedCount > 0}
 				<div class="hidden lg:block pt-1">
