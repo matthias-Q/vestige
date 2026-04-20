@@ -3,7 +3,7 @@
 	import type { GraphNode, GraphEdge, VestigeEvent } from '$types';
 	import { createScene, resizeScene, disposeScene, type SceneContext } from '$lib/graph/scene';
 	import { ForceSimulation } from '$lib/graph/force-sim';
-	import { NodeManager } from '$lib/graph/nodes';
+	import { NodeManager, type ColorMode } from '$lib/graph/nodes';
 	import { EdgeManager } from '$lib/graph/edges';
 	import { ParticleSystem } from '$lib/graph/particles';
 	import { EffectManager } from '$lib/graph/effects';
@@ -19,11 +19,31 @@
 		centerId: string;
 		events?: VestigeEvent[];
 		isDreaming?: boolean;
+		/// v2.0.8: colour mode for node spheres. "type" tints by node type
+		/// (fact/concept/event/…); "state" tints by FSRS accessibility bucket
+		/// (active/dormant/silent/unavailable). Toggled live from the graph page.
+		colorMode?: ColorMode;
 		onSelect?: (nodeId: string) => void;
 		onGraphMutation?: (mutation: GraphMutation) => void;
 	}
 
-	let { nodes, edges, centerId, events = [], isDreaming = false, onSelect, onGraphMutation }: Props = $props();
+	let {
+		nodes,
+		edges,
+		centerId,
+		events = [],
+		isDreaming = false,
+		colorMode = 'type',
+		onSelect,
+		onGraphMutation,
+	}: Props = $props();
+
+	// Re-tint every live node whenever the color mode flips. The NodeManager's
+	// setColorMode is idempotent and mutates materials in place, so this
+	// effect runs once per toggle and doesn't rebuild the scene.
+	$effect(() => {
+		nodeManager?.setColorMode(colorMode);
+	});
 
 	let container: HTMLDivElement;
 	let ctx: SceneContext;
@@ -58,6 +78,10 @@
 		// Modules
 		particles = new ParticleSystem(ctx.scene);
 		nodeManager = new NodeManager();
+		// Apply the initial colour mode before node creation so the first paint
+		// already reflects the user's prop choice. Prevents a visible flash from
+		// type-colour to state-colour on mount when the page defaults to state.
+		nodeManager.colorMode = colorMode;
 		edgeManager = new EdgeManager();
 		effects = new EffectManager(ctx.scene);
 		dreamMode = new DreamMode();

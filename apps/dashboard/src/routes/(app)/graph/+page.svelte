@@ -4,10 +4,12 @@
 	import Graph3D from '$components/Graph3D.svelte';
 	import RetentionCurve from '$components/RetentionCurve.svelte';
 	import TimeSlider from '$components/TimeSlider.svelte';
+	import MemoryStateLegend from '$components/MemoryStateLegend.svelte';
 	import { api } from '$stores/api';
 	import { eventFeed } from '$stores/websocket';
 	import type { GraphResponse, GraphNode, GraphEdge, Memory } from '$types';
 	import type { GraphMutation } from '$lib/graph/events';
+	import type { ColorMode } from '$lib/graph/nodes';
 	import { filterByDate } from '$lib/graph/temporal';
 
 	let graphData: GraphResponse | null = $state(null);
@@ -19,6 +21,10 @@
 	let maxNodes = $state(150);
 	let temporalEnabled = $state(false);
 	let temporalDate = $state(new Date());
+	// v2.0.8: colour spheres by node type (default) or by FSRS memory state
+	// (Active / Dormant / Silent / Unavailable). Legend overlay renders when
+	// state mode is active.
+	let colorMode: ColorMode = $state('type');
 
 	// Live counts that update on mutations
 	let liveNodeCount = $state(0);
@@ -158,6 +164,7 @@
 			centerId={graphData.center_id}
 			events={$eventFeed}
 			{isDreaming}
+			{colorMode}
 			onSelect={onNodeSelect}
 			onGraphMutation={handleGraphMutation}
 		/>
@@ -182,6 +189,32 @@
 		</div>
 
 		<div class="flex gap-2 ml-auto">
+			<!-- v2.0.8: colour mode toggle. Switches sphere tint between node type
+				 (fact / concept / event / …) and FSRS memory state (active / dormant /
+				 silent / unavailable). Legend auto-renders in state mode. -->
+			<div class="flex glass rounded-xl p-0.5 text-xs" role="radiogroup" aria-label="Colour mode">
+				<button
+					type="button"
+					role="radio"
+					aria-checked={colorMode === 'type'}
+					onclick={() => (colorMode = 'type')}
+					class="px-3 py-1.5 rounded-lg transition {colorMode === 'type' ? 'bg-synapse/25 text-synapse-glow' : 'text-dim hover:text-text'}"
+					title="Colour by node type (fact, concept, event, …)"
+				>
+					Type
+				</button>
+				<button
+					type="button"
+					role="radio"
+					aria-checked={colorMode === 'state'}
+					onclick={() => (colorMode = 'state')}
+					class="px-3 py-1.5 rounded-lg transition {colorMode === 'state' ? 'bg-synapse/25 text-synapse-glow' : 'text-dim hover:text-text'}"
+					title="Colour by FSRS memory state (active / dormant / silent / unavailable)"
+				>
+					State
+				</button>
+			</div>
+
 			<!-- Node count -->
 			<select bind:value={maxNodes} onchange={() => loadGraph()}
 				class="px-2 py-2 glass rounded-xl text-dim text-xs">
@@ -220,6 +253,14 @@
 			<span>depth {graphData.depth}</span>
 		{/if}
 	</div>
+
+	<!-- v2.0.8: FSRS memory-state legend. Only rendered in state mode so the
+		 legend doesn't compete with the node-type palette in type mode. -->
+	{#if colorMode === 'state'}
+		<div class="absolute bottom-4 right-4 z-10">
+			<MemoryStateLegend />
+		</div>
+	{/if}
 
 	<!-- Temporal playback slider -->
 	{#if graphData}

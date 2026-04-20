@@ -2,6 +2,65 @@ import * as THREE from 'three';
 import type { GraphNode } from '$types';
 import { NODE_TYPE_COLORS } from '$types';
 
+// ============================================================================
+// v2.0.8: Memory state coloring (FSRS accessibility bucket)
+// ============================================================================
+//
+// Every knowledge_node has an FSRS accessibility score computed from
+// (retention × 0.5 + retrieval × 0.3 + storage × 0.2). That score gates which
+// memories surface in search and drives the Active / Dormant / Silent /
+// Unavailable lifecycle documented by Bjork & Bjork 1992 dual-strength model.
+//
+// The backend computes all three channels, but `GraphNode` only carries
+// `retention` — which is already the dominant weight (0.5 of 1.0). Using
+// retention alone as a proxy is a known approximation; the buckets line up
+// with the same thresholds `execute_system_status` uses server-side, so the
+// visual labelling matches what `/api/stats` reports in its
+// `stateDistribution` block.
+
+export type MemoryState = 'active' | 'dormant' | 'silent' | 'unavailable';
+
+/// Map an FSRS retention score to its accessibility bucket.
+///
+/// Thresholds match `execute_system_status` at the backend so the 3D graph's
+/// colours line up with the numbers reported by `/api/stats`.
+export function getMemoryState(retention: number): MemoryState {
+	if (retention >= 0.7) return 'active';
+	if (retention >= 0.4) return 'dormant';
+	if (retention >= 0.1) return 'silent';
+	return 'unavailable';
+}
+
+/// FSRS state palette. Distinct from NODE_TYPE_COLORS so the two modes can
+/// coexist in the UI without overloading a single colour channel.
+export const MEMORY_STATE_COLORS: Record<MemoryState, string> = {
+	active: '#10b981', // emerald — easily retrievable
+	dormant: '#f59e0b', // amber — retrievable with effort
+	silent: '#8b5cf6', // violet — difficult, needs cues
+	unavailable: '#6b7280', // slate — needs reinforcement
+};
+
+export const MEMORY_STATE_DESCRIPTIONS: Record<MemoryState, string> = {
+	active: 'Easily retrievable (retention ≥ 70%)',
+	dormant: 'Retrievable with effort (40–70%)',
+	silent: 'Difficult, needs cues (10–40%)',
+	unavailable: 'Needs reinforcement (< 10%)',
+};
+
+/// Color mode controls whether node spheres are tinted by node type
+/// (fact / concept / event / …) or by FSRS memory state.
+/// Type mode is the long-standing default; state mode is the v2.0.8 addition.
+export type ColorMode = 'type' | 'state';
+
+/// Pick a hex colour for a node given the active colour mode.
+/// Falls back to the grey `unavailable` tone if the node's type is unknown.
+export function getNodeColor(node: GraphNode, mode: ColorMode): string {
+	if (mode === 'state') {
+		return MEMORY_STATE_COLORS[getMemoryState(node.retention)];
+	}
+	return NODE_TYPE_COLORS[node.type] || '#8B95A5';
+}
+
 // Shared radial-gradient texture used for every node's glow Sprite.
 // Without a map, THREE.Sprite renders as a flat coloured plane — additive-
 // blending + UnrealBloomPass then amplifies its square edges into the
@@ -80,6 +139,9 @@ export class NodeManager {
 	labelSprites = new Map<string, THREE.Sprite>();
 	hoveredNode: string | null = null;
 	selectedNode: string | null = null;
+	/// v2.0.8: colour nodes by FSRS memory state (active/dormant/silent/unavailable)
+	/// instead of node type. Switched at runtime via `setColorMode`.
+	colorMode: ColorMode = 'type';
 
 	private materializingNodes: MaterializingNode[] = [];
 	private dissolvingNodes: DissolvingNode[] = [];
@@ -87,6 +149,38 @@ export class NodeManager {
 
 	constructor() {
 		this.group = new THREE.Group();
+	}
+
+	/// Switch the active colour mode and re-tint every live node in place.
+	/// Safe to call mid-animation — the mesh + glow materials are mutable.
+	/// Suppressed nodes keep their 20% opacity / zero-emissive treatment
+	/// since that is a separate visual channel (v2.0.5 SIF).
+	setColorMode(mode: ColorMode) {
+		if (this.colorMode === mode) return;
+		this.colorMode = mode;
+		for (const [id, mesh] of this.meshMap) {
+			const retention = (mesh.userData.retention as number | undefined) ?? 0;
+			const type = (mesh.userData.type as string | undefined) ?? 'fact';
+			const stubNode = {
+				id,
+				label: '',
+				type,
+				retention,
+				tags: [],
+				createdAt: '',
+				updatedAt: '',
+				isCenter: false,
+			} as GraphNode;
+			const hex = getNodeColor(stubNode, mode);
+			const newColor = new THREE.Color(hex);
+			const mat = mesh.material as THREE.MeshStandardMaterial;
+			mat.color.copy(newColor);
+			mat.emissive.copy(newColor);
+			const glow = this.glowMap.get(id);
+			if (glow) {
+				(glow.material as THREE.SpriteMaterial).color.copy(newColor);
+			}
+		}
 	}
 
 	createNodes(nodes: GraphNode[]): Map<string, THREE.Vector3> {
@@ -119,7 +213,9 @@ export class NodeManager {
 
 	private createNodeMeshes(node: GraphNode, pos: THREE.Vector3, initialScale: number) {
 		const size = 0.5 + node.retention * 2;
-		const color = NODE_TYPE_COLORS[node.type] || '#8B95A5';
+		// v2.0.8: respect the active colour mode. Newly-added nodes during the
+		// same session follow the mode toggled at the UI layer.
+		const color = getNodeColor(node, this.colorMode);
 
 		// v2.0.5 Active Forgetting: suppressed memories dim to 20% opacity
 		// and lose their emissive glow, mimicking inhibitory-control silencing.
