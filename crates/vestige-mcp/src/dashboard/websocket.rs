@@ -123,6 +123,9 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
             msg = receiver.next() => {
                 match msg {
                     Some(Ok(Message::Close(_))) | None => break,
+                    // Match guards can't move out of the bound `data` (Bytes is
+                    // not Copy), so the nested `if` is required here.
+                    #[allow(clippy::collapsible_match, clippy::collapsible_if)]
                     Some(Ok(Message::Ping(data))) => {
                         if sender.send(Message::Pong(data)).await.is_err() {
                             break;

@@ -673,11 +673,11 @@ impl GitAnalyzer {
 
         // Top contributors
         let mut top_contributors: Vec<_> = author_counts.into_iter().collect();
-        top_contributors.sort_by(|a, b| b.1.cmp(&a.1));
+        top_contributors.sort_by_key(|b| std::cmp::Reverse(b.1));
 
         // Hot files (most frequently changed)
         let mut hot_files: Vec<_> = file_counts.into_iter().collect();
-        hot_files.sort_by(|a, b| b.1.cmp(&a.1));
+        hot_files.sort_by_key(|b| std::cmp::Reverse(b.1));
 
         Ok(HistoryAnalysis {
             bug_fixes,

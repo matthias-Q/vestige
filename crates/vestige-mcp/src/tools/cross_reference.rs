@@ -560,7 +560,7 @@ pub async fn execute(
 
     // Sort by date descending for supersession
     let mut by_date = scored.iter().collect::<Vec<_>>();
-    by_date.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
+    by_date.sort_by_key(|b| std::cmp::Reverse(b.updated_at));
 
     for i in 0..by_date.len() {
         for j in (i + 1)..by_date.len() {
