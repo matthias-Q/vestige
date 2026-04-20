@@ -5,6 +5,49 @@ All notable changes to Vestige will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.7] - 2026-04-19 — "Visible"
+
+Hygiene release plus two UI gap closures. No breaking changes, no new major features, no schema migrations affecting user data beyond V11 dropping two verified-unused tables.
+
+### Added
+
+- **`POST /api/memories/{id}/suppress`** — Dashboard users can now trigger top-down inhibitory control (Anderson 2025 SIF + Davis Rac1 cascade) without dropping to raw MCP. Optional JSON body `{"reason": "..."}` logged for audit. Each call compounds; response includes `suppressionCount`, `priorCount`, `retrievalPenalty`, `reversibleUntil`, `estimatedCascadeNeighbors`, and `labileWindowHours`. Emits the existing `MemorySuppressed` WebSocket event so the 3D graph plays the violet implosion + compounding pulse shipped in v2.0.6.
+- **`POST /api/memories/{id}/unsuppress`** — Reverses a suppression inside the 24h labile window. Returns `stillSuppressed: bool` so the UI can tell a full reversal from a compounded-down state. Emits `MemoryUnsuppressed` for the rainbow-burst reversal animation.
+- **Suppress button on the Memories page** — Third action alongside Promote / Demote / Delete, hover-tooltip explaining the neuroscience ("Top-down inhibition (Anderson 2025). Compounds. Reversible for 24h.").
+- **Uptime in the sidebar footer** — The Heartbeat WebSocket event has carried `uptime_secs` since v2.0.5 but was never rendered. Now displays as `up 3d 4h` / `up 18m` / `up 47s` (compact two-most-significant-units format) next to memory count + retention.
+
+### Fixed
+
+- **`execute_export` no longer panics on unknown format.** The write-out match arm at `maintenance.rs` was `_ => unreachable!()` — defensive `Err(...)` now returns a clean "unsupported export format" message instead of unwinding through the MCP dispatcher.
+- **Dashboard graph page distinguishes empty-database from API failure** (landed in the first half of this branch). Before v2.0.7 any error from `/api/graph` rendered as "No memories yet," which masked real failures. Now the regex + node-count gate splits the two; real errors surface as "Failed to load graph: [sanitized message]" with filesystem paths stripped for info-disclosure hardening.
+- **`predict` MCP tool surfaces a `predict_degraded` flag** instead of silently returning empty vecs on lock poisoning. `tracing::warn!` logs the per-channel error for observability.
+- **`memory_changelog` honors `start` / `end` ISO-8601 bounds.** Previously advertised in the schema since v1.7 but runtime-ignored. Malformed timestamps now return a helpful error instead of silently dropping the filter. Response includes a `filter` field echoing the applied window.
+- **`intention` check honors `include_snoozed`.** Previously silent no-op; snoozed intentions were invisible to check regardless of the arg. Dedup via HashSet guards against storage overlap.
+- **`intention` check response exposes `status` and `snoozedUntil`** so callers can distinguish active-triggered from snoozed-overdue intentions.
+- **Server tool-count comment at `server.rs:212`** updated (23 → 24) to match the runtime assertion.
+
+### Removed
+
+- **Migration V11: drops dead `knowledge_edges` + `compressed_memories` tables.** Both were added speculatively in V4 and marked deprecated in the same migration that created them. Zero INSERT or SELECT anywhere in `crates/`. Frees schema space for future migrations.
+- **`execute_health_check` (71 LOC) + `execute_stats` (179 LOC) in `maintenance.rs`.** Both `#[allow(dead_code)]` since v1.7 with in-file comments routing users to `execute_system_status` instead. Zero callers workspace-wide. Net -273 LOC in the touched file.
+- **`x86_64-apple-darwin` job from `.github/workflows/release.yml`.** The Intel Mac build failed the v2.0.5 AND v2.0.6 release workflows because `ort-sys 2.0.0-rc.11` (pinned by `fastembed 5.13.2`) does not ship Intel Mac prebuilts. `ci.yml` had already dropped the target; `release.yml` is now in sync. README documents the build-from-source path. Future releases should publish clean on all three supported platforms (macOS ARM64, Linux x86_64, Windows MSVC).
+
+### Docs
+
+- Reconciled tool / module / test counts across `README.md`, `CONTRIBUTING.md`, `docs/integrations/windsurf.md`, `docs/integrations/xcode.md`. Ground truth: **24 MCP tools · 29 cognitive modules · 1,292 Rust tests + 171 dashboard tests.**
+- Historical CHANGELOG entries and `docs/launch/*.md` launch materials left unchanged because they are time-stamped artifacts of their respective releases.
+
+### Tests
+
+- **+7 assertions** covering the v2.0.7 behavioral changes: V11 migration drops dead tables + is idempotent on replay, `predict_degraded` false on happy path, `include_snoozed` both paths + `status` field exposure, malformed `start` returns helpful error + `filter` field echo.
+- Full suite: **1,292 Rust passing / 0 failed** across `cargo test --workspace --release`. **171 dashboard tests passing.** Zero clippy warnings on `vestige-core` or `vestige-mcp` under `-D warnings`.
+
+### Audit
+
+Pre-merge audited by 4 parallel reviewers (security, code quality, end-to-end flow trace, external verification). Zero CRITICAL or HIGH findings. Two MEDIUM fixes landed in the branch: graph error-message path sanitization (strip `/path/to/*.{sqlite,rs,db,toml,lock}`, cap 200 chars) and `intention` response `status` field exposure.
+
+---
+
 ## [2.0.6] - 2026-04-18 — "Composer"
 
 Polish release aimed at new-user happiness. v2.0.5's cognitive stack was already shipping; v2.0.6 makes it *feel* alive in the dashboard and stays out of your way on the prompt side.
