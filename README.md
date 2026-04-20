@@ -34,7 +34,7 @@ v2.0.6 is a polish release that makes the existing cognitive stack finally *feel
 
 Ebbinghaus 1885 models what happens to memories you don't touch. Anderson 2025 models what happens when you actively want to stop thinking about one. Every other AI memory system implements the first. Vestige is the first to ship the second.
 
-Based on [Anderson et al. 2025](https://www.nature.com/articles/s41583-025-00929-y) (Suppression-Induced Forgetting, *Nat Rev Neurosci*) and [Cervantes-Sandoval et al. 2020](https://pmc.ncbi.nlm.nih.gov/articles/PMC7477079/) (Rac1 synaptic cascade). **24 tools · 30 cognitive modules · 1,284 tests.**
+Based on [Anderson et al. 2025](https://www.nature.com/articles/s41583-025-00929-y) (Suppression-Induced Forgetting, *Nat Rev Neurosci*) and [Cervantes-Sandoval et al. 2020](https://pmc.ncbi.nlm.nih.gov/articles/PMC7477079/) (Rac1 synaptic cascade). **24 tools · 29 cognitive modules · 1,292 tests.**
 
 <details>
 <summary>Earlier releases (v2.0 "Cognitive Leap" → v2.0.4 "Deep Reference")</summary>
@@ -151,7 +151,7 @@ The dashboard runs automatically at `http://localhost:3927/dashboard` when the M
 │  15 REST endpoints · WS event broadcast              │
 ├─────────────────────────────────────────────────────┤
 │  MCP Server (stdio JSON-RPC)                         │
-│  24 tools · 30 cognitive modules                     │
+│  24 tools · 29 cognitive modules                     │
 ├─────────────────────────────────────────────────────┤
 │  Cognitive Engine                                    │
 │  ┌──────────┐ ┌──────────┐ ┌───────────────┐       │
@@ -305,7 +305,7 @@ At the start of every session:
 | Metric | Value |
 |--------|-------|
 | **Language** | Rust 2024 edition (MSRV 1.91) |
-| **Codebase** | 80,000+ lines, 1,284 tests (364 core + 419 mcp + 497 e2e + 4 doctests) |
+| **Codebase** | 80,000+ lines, 1,292 tests (366 core + 425 mcp + 497 e2e + 4 doctests) |
 | **Binary size** | ~20MB |
 | **Embeddings** | Nomic Embed Text v1.5 (768d → 256d Matryoshka, 8192 context) |
 | **Vector search** | USearch HNSW (20x faster than FAISS) |
@@ -413,5 +413,5 @@ AGPL-3.0 — free to use, modify, and self-host. If you offer Vestige as a netwo
 
 <p align="center">
   <i>Built by <a href="https://github.com/samvallad33">@samvallad33</a></i><br>
-  <sub>80,000+ lines of Rust · 30 cognitive modules · 130 years of memory research · one 22MB binary</sub>
+  <sub>80,000+ lines of Rust · 29 cognitive modules · 130 years of memory research · one 22MB binary</sub>
 </p>
