@@ -137,7 +137,7 @@ The MCP server and dashboard. Key modules:
 |--------|---------|
 | `server.rs` | MCP JSON-RPC server (rmcp 0.14) |
 | `cognitive.rs` | CognitiveEngine — 29 stateful modules |
-| `tools/` | One file per MCP tool (23 tools) |
+| `tools/` | One file per MCP tool (24 tools) |
 | `dashboard/` | Axum HTTP + WebSocket + event bus |
 
 ### apps/dashboard
