@@ -261,7 +261,7 @@ export class NodeManager {
 
 		// Text label sprite
 		const labelText = node.label || node.type;
-		const labelSprite = this.createTextSprite(labelText, '#e2e8f0');
+		const labelSprite = this.createTextSprite(labelText, '#94a3b8');
 		labelSprite.position.copy(pos);
 		labelSprite.position.y += size * 2 + 1.5;
 		labelSprite.userData = { isLabel: true, nodeId: node.id, offset: size * 2 + 1.5 };
@@ -339,6 +339,20 @@ export class NodeManager {
 		});
 	}
 
+	/// Render a label as a dark rounded "pill" with dim slate text.
+	///
+	/// The scene runs an UnrealBloomPass with threshold 0.2, so any bright
+	/// canvas pixels get smeared into a halo. Previously the labels were
+	/// near-white (#e2e8f0) text on a transparent background, which bloomed
+	/// into unreadable white blobs (issue filed by Sam 2026-04-19). The fix:
+	///
+	///   1. A ~85%-opaque dark pill under the text so the background is
+	///      well below the bloom threshold, stopping the halo before it
+	///      spreads past the label bounds.
+	///   2. Mid-luminance slate text (#94a3b8 by default) — still legible
+	///      but dim enough that bloom only adds a soft glow, not a blast.
+	///   3. Smaller font (22px) and tighter sprite scale (9×1.2) so labels
+	///      don't visually compete with the node spheres they annotate.
 	private createTextSprite(text: string, color: string): THREE.Sprite {
 		const canvas = document.createElement('canvas');
 		const ctx = canvas.getContext('2d');
@@ -352,15 +366,51 @@ export class NodeManager {
 		const label = text.length > 40 ? text.slice(0, 37) + '...' : text;
 
 		ctx.clearRect(0, 0, canvas.width, canvas.height);
-		ctx.font = 'bold 28px -apple-system, BlinkMacSystemFont, sans-serif';
+
+		// Measure the label so the backing pill hugs the text instead of
+		// spanning the full canvas width (which would leave a giant empty
+		// dark bar on short labels like "fact" or "note").
+		ctx.font = '600 22px -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif';
+		const metrics = ctx.measureText(label);
+		const textWidth = metrics.width;
+		const padX = 14;
+		const padY = 9;
+		const pillW = Math.min(textWidth + padX * 2, canvas.width - 4);
+		const pillH = 40;
+		const pillX = (canvas.width - pillW) / 2;
+		const pillY = (canvas.height - pillH) / 2;
+		const radius = pillH / 2;
+
+		// Dark glass pill — low enough luminance that UnrealBloomPass at
+		// threshold 0.2 does not amplify its pixels.
+		ctx.fillStyle = 'rgba(10, 16, 28, 0.82)';
+		ctx.beginPath();
+		ctx.moveTo(pillX + radius, pillY);
+		ctx.lineTo(pillX + pillW - radius, pillY);
+		ctx.quadraticCurveTo(pillX + pillW, pillY, pillX + pillW, pillY + radius);
+		ctx.lineTo(pillX + pillW, pillY + pillH - radius);
+		ctx.quadraticCurveTo(
+			pillX + pillW,
+			pillY + pillH,
+			pillX + pillW - radius,
+			pillY + pillH
+		);
+		ctx.lineTo(pillX + radius, pillY + pillH);
+		ctx.quadraticCurveTo(pillX, pillY + pillH, pillX, pillY + pillH - radius);
+		ctx.lineTo(pillX, pillY + radius);
+		ctx.quadraticCurveTo(pillX, pillY, pillX + radius, pillY);
+		ctx.closePath();
+		ctx.fill();
+
+		// Hairline stroke for definition at small camera distances.
+		ctx.strokeStyle = 'rgba(148, 163, 184, 0.18)';
+		ctx.lineWidth = 1;
+		ctx.stroke();
+
 		ctx.textAlign = 'center';
 		ctx.textBaseline = 'middle';
-		ctx.shadowColor = 'rgba(0, 0, 0, 0.8)';
-		ctx.shadowBlur = 6;
-		ctx.shadowOffsetX = 0;
-		ctx.shadowOffsetY = 2;
 		ctx.fillStyle = color;
-		ctx.fillText(label, canvas.width / 2, canvas.height / 2);
+		ctx.fillText(label, canvas.width / 2, canvas.height / 2 + 1);
 
 		const texture = new THREE.CanvasTexture(canvas);
 		texture.needsUpdate = true;
@@ -374,7 +424,7 @@ export class NodeManager {
 		});
 
 		const sprite = new THREE.Sprite(mat);
-		sprite.scale.set(12, 1.5, 1);
+		sprite.scale.set(9, 1.2, 1);
 		return sprite;
 	}
 
