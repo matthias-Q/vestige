@@ -1520,6 +1520,38 @@ impl Storage {
         Ok(result)
     }
 
+    /// FTS5 keyword search using individual-term matching (implicit AND).
+    ///
+    /// Unlike `search()` which uses phrase matching (words must be adjacent),
+    /// this returns documents containing ALL query words in any order and position.
+    /// This is more useful for free-text queries from external callers.
+    pub fn search_terms(&self, query: &str, limit: i32) -> Result<Vec<KnowledgeNode>> {
+        use crate::fts::sanitize_fts5_terms;
+        let Some(terms) = sanitize_fts5_terms(query) else {
+            return Ok(vec![]);
+        };
+
+        let reader = self
+            .reader
+            .lock()
+            .map_err(|_| StorageError::Init("Reader lock poisoned".into()))?;
+        let mut stmt = reader.prepare(
+            "SELECT n.* FROM knowledge_nodes n
+             JOIN knowledge_fts fts ON n.id = fts.id
+             WHERE knowledge_fts MATCH ?1
+             ORDER BY rank
+             LIMIT ?2",
+        )?;
+
+        let nodes = stmt.query_map(params![terms, limit], Self::row_to_node)?;
+
+        let mut result = Vec::new();
+        for node in nodes {
+            result.push(node?);
+        }
+        Ok(result)
+    }
+
     /// Get all nodes (paginated)
     pub fn get_all_nodes(&self, limit: i32, offset: i32) -> Result<Vec<KnowledgeNode>> {
         let reader = self
@@ -1841,7 +1873,12 @@ impl Storage {
         include_types: Option<&[String]>,
         exclude_types: Option<&[String]>,
     ) -> Result<Vec<(String, f32)>> {
-        let sanitized_query = sanitize_fts5_query(query);
+        // Use individual-term matching (implicit AND) so multi-word queries find
+        // documents where all words appear anywhere, not just as adjacent phrases.
+        use crate::fts::sanitize_fts5_terms;
+        let Some(terms_query) = sanitize_fts5_terms(query) else {
+            return Ok(vec![]);
+        };
 
         // Build the type filter clause and collect parameter values.
         // We use numbered parameters: ?1 = query, ?2 = limit, ?3.. = type strings.
@@ -1887,7 +1924,7 @@ impl Storage {
 
         // Build the parameter list: [query, limit, ...type_values]
         let mut param_values: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
-        param_values.push(Box::new(sanitized_query.clone()));
+        param_values.push(Box::new(terms_query));
         param_values.push(Box::new(limit));
         for tv in &type_values {
             param_values.push(Box::new(tv.to_string()));
