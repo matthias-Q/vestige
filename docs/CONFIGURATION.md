@@ -31,10 +31,16 @@ export FASTEMBED_CACHE_PATH="/custom/path"
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `VESTIGE_DATA_DIR` | Platform default | Custom database location |
-| `VESTIGE_LOG_LEVEL` | `info` | Logging verbosity |
-| `RUST_LOG` | - | Detailed tracing output |
+| `RUST_LOG` | `info` (via tracing-subscriber) | Log verbosity + per-module filtering |
 | `FASTEMBED_CACHE_PATH` | `./.fastembed_cache` | Embedding model cache location |
+| `VESTIGE_DASHBOARD_PORT` | `3927` | Dashboard HTTP + WebSocket port |
+| `VESTIGE_HTTP_PORT` | `3928` | Optional MCP-over-HTTP port |
+| `VESTIGE_HTTP_BIND` | `127.0.0.1` | HTTP bind address |
+| `VESTIGE_AUTH_TOKEN` | auto-generated | Dashboard + MCP HTTP bearer auth |
+| `VESTIGE_DASHBOARD_ENABLED` | `true` | Set `false` to disable the web dashboard |
+| `VESTIGE_CONSOLIDATION_INTERVAL_HOURS` | `6` | FSRS-6 decay cycle cadence |
+
+> **Storage location** is controlled by the `--data-dir <path>` CLI flag (see below), not an env var. Default is your OS's per-user data directory: `~/Library/Application Support/com.vestige.core/` on macOS, `~/.local/share/vestige/` on Linux, `%APPDATA%\vestige\core\data\` on Windows.
 
 ---
 

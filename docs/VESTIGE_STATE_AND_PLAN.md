@@ -396,7 +396,6 @@ Binary crate. Wraps `vestige-core` behind an MCP JSON-RPC 2.0 server, plus an em
 
 | Var | Default | Purpose |
 |---|---|---|
-| `VESTIGE_DATA_DIR` | `~/.vestige/` | Storage root |
 | `VESTIGE_DASHBOARD_PORT` | `3927` | Dashboard HTTP + WebSocket port |
 | `VESTIGE_HTTP_PORT` | `3928` | Optional MCP-over-HTTP port |
 | `VESTIGE_HTTP_BIND` | `127.0.0.1` | HTTP bind address |
@@ -706,7 +705,7 @@ vestige-cloud/
         ├── Cargo.toml               # binary: vestige-http
         └── src/
             ├── main.rs              # Axum server on :3927, auth + cors middleware
-            ├── auth.rs              # Single bearer token via VESTIGE_API_KEY env, open if unset
+            ├── auth.rs              # Single bearer token via VESTIGE_AUTH_TOKEN env (auto-generated if unset, stored in data-dir)
             ├── cors.rs              # prod: allowlist vestige.dev + app.vestige.dev; dev: permissive
             ├── state.rs             # Arc<Mutex<Storage>> shared state (SINGLE TENANT)
             ├── sse.rs               # /mcp/sse STUB — 3 TODOs, returns one static "endpoint" event

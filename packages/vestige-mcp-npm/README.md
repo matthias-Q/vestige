@@ -91,9 +91,12 @@ export FASTEMBED_CACHE_PATH="$HOME/.fastembed_cache"
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `VESTIGE_DATA_DIR` | Data storage directory | `~/.vestige` |
-| `VESTIGE_LOG_LEVEL` | Log verbosity | `info` |
-| `FASTEMBED_CACHE_PATH` | Embeddings model location | `./.fastembed_cache` |
+| `RUST_LOG` | Log verbosity + per-module filter | `info` |
+| `FASTEMBED_CACHE_PATH` | Embeddings model cache | `./.fastembed_cache` |
+| `VESTIGE_DASHBOARD_PORT` | Dashboard port | `3927` |
+| `VESTIGE_AUTH_TOKEN` | Bearer auth for dashboard + HTTP MCP | auto-generated |
+
+Storage location is the `--data-dir <path>` CLI flag (defaults to your OS's per-user data directory).
 
 ## Troubleshooting
 
