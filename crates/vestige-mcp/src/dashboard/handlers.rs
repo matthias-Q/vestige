@@ -468,6 +468,30 @@ pub struct GraphParams {
     pub center_id: Option<String>,
     pub depth: Option<u32>,
     pub max_nodes: Option<usize>,
+    /// How to choose the default center when neither `query` nor `center_id`
+    /// is provided. "recent" (default) uses the newest memory — matches
+    /// what users actually expect ("show me my recent stuff"). "connected"
+    /// uses the most-connected memory for a richer initial subgraph; used
+    /// to be the default but ended up clustering on historical hotspots
+    /// and hiding fresh memories that hadn't accumulated edges yet.
+    /// Unknown values fall back to "recent".
+    pub sort: Option<String>,
+}
+
+/// Which memory to center the default subgraph on.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum GraphSort {
+    Recent,
+    Connected,
+}
+
+impl GraphSort {
+    fn parse(raw: Option<&str>) -> Self {
+        match raw.map(str::to_ascii_lowercase).as_deref() {
+            Some("connected") => Self::Connected,
+            _ => Self::Recent,
+        }
+    }
 }
 
 /// Get memory graph data (nodes + edges with layout positions)
@@ -477,8 +501,10 @@ pub async fn get_graph(
 ) -> Result<Json<Value>, StatusCode> {
     let depth = params.depth.unwrap_or(2).clamp(1, 3);
     let max_nodes = params.max_nodes.unwrap_or(50).clamp(1, 200);
+    let sort = GraphSort::parse(params.sort.as_deref());
 
     // Determine center node
+    let explicit_center = params.center_id.is_some() || params.query.is_some();
     let center_id = if let Some(ref id) = params.center_id {
         id.clone()
     } else if let Some(ref query) = params.query {
@@ -491,31 +517,33 @@ pub async fn get_graph(
             .map(|n| n.id.clone())
             .ok_or(StatusCode::NOT_FOUND)?
     } else {
-        // Default: most connected memory (for a rich initial graph)
-        let most_connected = state
-            .storage
-            .get_most_connected_memory()
-            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-        if let Some(id) = most_connected {
-            id
-        } else {
-            // Fallback: most recent memory
-            let recent = state
-                .storage
-                .get_all_nodes(1, 0)
-                .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-            recent
-                .first()
-                .map(|n| n.id.clone())
-                .ok_or(StatusCode::NOT_FOUND)?
-        }
+        default_center_id(&state.storage, sort)?
     };
 
     // Get subgraph
-    let (nodes, edges) = state
+    let (mut nodes, mut edges) = state
         .storage
         .get_memory_subgraph(&center_id, depth, max_nodes)
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    // Default-load fallback: if the newest memory is isolated (1 node, 0 edges),
+    // silently re-resolve via Connected so the user sees the densest cluster
+    // instead of a lonely orb. Explicit query/center_id requests are honored
+    // as-is — the user asked for that specific subgraph.
+    let mut center_id = center_id;
+    if !explicit_center
+        && sort == GraphSort::Recent
+        && nodes.len() <= 1
+        && edges.is_empty()
+        && let Ok(fallback) = default_center_id(&state.storage, GraphSort::Connected)
+        && fallback != center_id
+        && let Ok((n2, e2)) = state.storage.get_memory_subgraph(&fallback, depth, max_nodes)
+        && n2.len() > nodes.len()
+    {
+        center_id = fallback;
+        nodes = n2;
+        edges = e2;
+    }
 
     if nodes.is_empty() {
         return Err(StatusCode::NOT_FOUND);
@@ -563,6 +591,46 @@ pub async fn get_graph(
         "nodeCount": nodes.len(),
         "edgeCount": edges.len(),
     })))
+}
+
+/// Pick the default subgraph center when neither `query` nor `center_id`
+/// was provided. Factored out so both the route handler and unit tests can
+/// exercise the same branching (recent vs connected + empty-db fallback)
+/// without spinning up a full axum server.
+fn default_center_id(
+    storage: &std::sync::Arc<vestige_core::Storage>,
+    sort: GraphSort,
+) -> Result<String, StatusCode> {
+    match sort {
+        GraphSort::Recent => {
+            let recent = storage
+                .get_all_nodes(1, 0)
+                .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+            recent
+                .first()
+                .map(|n| n.id.clone())
+                .ok_or(StatusCode::NOT_FOUND)
+        }
+        GraphSort::Connected => {
+            let most_connected = storage
+                .get_most_connected_memory()
+                .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+            if let Some(id) = most_connected {
+                Ok(id)
+            } else {
+                // Nothing connected yet (fresh DB, or every node is isolated) —
+                // fall through to the newest memory so the user still sees
+                // SOMETHING rather than a 404.
+                let recent = storage
+                    .get_all_nodes(1, 0)
+                    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+                recent
+                    .first()
+                    .map(|n| n.id.clone())
+                    .ok_or(StatusCode::NOT_FOUND)
+            }
+        }
+    }
 }
 
 // ============================================================================
@@ -1087,4 +1155,261 @@ pub async fn list_intentions(
         "total": count,
         "filter": status_filter,
     })))
+}
+
+// ============================================================================
+// DEEP REFERENCE (Reasoning Theater, v2.0.8)
+// ============================================================================
+
+#[derive(Debug, Deserialize)]
+pub struct DeepReferenceBody {
+    pub query: String,
+    pub depth: Option<i32>,
+}
+
+/// Run the 8-stage deep_reference cognitive pipeline over HTTP.
+///
+/// Wraps the existing `crate::tools::cross_reference::execute` tool so the
+/// dashboard can surface the same reasoning chain the MCP clients see. Emits
+/// a `DeepReferenceCompleted` event with primary + supporting + contradicting
+/// memory IDs so Graph3D can camera-glide, pulse evidence nodes, and draw
+/// contradiction arcs in the 3D scene.
+pub async fn deep_reference_query(
+    State(state): State<AppState>,
+    Json(body): Json<DeepReferenceBody>,
+) -> Result<Json<Value>, StatusCode> {
+    let cognitive = state
+        .cognitive
+        .as_ref()
+        .ok_or(StatusCode::SERVICE_UNAVAILABLE)?;
+
+    if body.query.trim().is_empty() {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+
+    let args = serde_json::json!({
+        "query": body.query.clone(),
+        "depth": body.depth.unwrap_or(20).clamp(5, 50),
+    });
+
+    let start = std::time::Instant::now();
+    let response = crate::tools::cross_reference::execute(&state.storage, cognitive, Some(args))
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let duration_ms = start.elapsed().as_millis() as u64;
+
+    // Pull evidence IDs out for the WebSocket event so Graph3D can glide,
+    // pulse, and arc. We intentionally read from the serialized JSON rather
+    // than re-running the pipeline — whatever the tool decided is what the
+    // Theater visualizes.
+    let primary_id = response
+        .get("recommended")
+        .and_then(|r| r.get("memory_id"))
+        .and_then(|v| v.as_str())
+        .map(String::from);
+
+    let supporting_ids: Vec<String> = response
+        .get("evidence")
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|e| {
+                    let role = e.get("role").and_then(|r| r.as_str()).unwrap_or("");
+                    if role == "supporting" || role == "primary" {
+                        e.get("id").and_then(|v| v.as_str()).map(String::from)
+                    } else {
+                        None
+                    }
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+
+    let contradicting_ids: Vec<String> = response
+        .get("evidence")
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|e| {
+                    let role = e.get("role").and_then(|r| r.as_str()).unwrap_or("");
+                    if role == "contradicting" {
+                        e.get("id").and_then(|v| v.as_str()).map(String::from)
+                    } else {
+                        None
+                    }
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+
+    let contradiction_pairs: Vec<(String, String)> = response
+        .get("contradictions")
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|c| {
+                    let a = c.get("a_id").and_then(|v| v.as_str())?.to_string();
+                    let b = c.get("b_id").and_then(|v| v.as_str())?.to_string();
+                    Some((a, b))
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+
+    let memories_analyzed = response
+        .get("memoriesAnalyzed")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0) as usize;
+
+    let confidence = response
+        .get("confidence")
+        .and_then(|v| v.as_f64())
+        .unwrap_or(0.0);
+
+    let intent = response
+        .get("intent")
+        .and_then(|v| v.as_str())
+        .unwrap_or("Synthesis")
+        .to_string();
+
+    let status = response
+        .get("status")
+        .and_then(|v| v.as_str())
+        .unwrap_or("unknown")
+        .to_string();
+
+    state.emit(VestigeEvent::DeepReferenceCompleted {
+        query: body.query,
+        intent,
+        status,
+        confidence,
+        primary_id,
+        supporting_ids,
+        contradicting_ids,
+        contradiction_pairs,
+        memories_analyzed,
+        duration_ms,
+        timestamp: Utc::now(),
+    });
+
+    Ok(Json(response))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::Utc;
+    use std::sync::Arc;
+    use tempfile::tempdir;
+    use vestige_core::memory::IngestInput;
+    use vestige_core::{ConnectionRecord, Storage};
+
+    #[test]
+    fn graph_sort_parse_defaults_to_recent() {
+        assert_eq!(GraphSort::parse(None), GraphSort::Recent);
+        assert_eq!(GraphSort::parse(Some("")), GraphSort::Recent);
+        assert_eq!(GraphSort::parse(Some("recent")), GraphSort::Recent);
+        assert_eq!(GraphSort::parse(Some("RECENT")), GraphSort::Recent);
+        assert_eq!(GraphSort::parse(Some("Recent")), GraphSort::Recent);
+        assert_eq!(GraphSort::parse(Some("garbage")), GraphSort::Recent);
+    }
+
+    #[test]
+    fn graph_sort_parse_accepts_connected_case_insensitive() {
+        assert_eq!(GraphSort::parse(Some("connected")), GraphSort::Connected);
+        assert_eq!(GraphSort::parse(Some("CONNECTED")), GraphSort::Connected);
+        assert_eq!(GraphSort::parse(Some("Connected")), GraphSort::Connected);
+    }
+
+    fn seed_storage() -> (tempfile::TempDir, Arc<Storage>) {
+        let dir = tempdir().unwrap();
+        let db_path = dir.path().join("test.db");
+        let storage = Arc::new(Storage::new(Some(db_path)).unwrap());
+        (dir, storage)
+    }
+
+    fn ingest(storage: &Storage, content: &str) -> String {
+        let node = storage
+            .ingest(IngestInput {
+                content: content.to_string(),
+                node_type: "fact".to_string(),
+                ..Default::default()
+            })
+            .unwrap();
+        node.id
+    }
+
+    #[test]
+    fn default_center_id_recent_returns_newest_node() {
+        let (_dir, storage) = seed_storage();
+        ingest(&storage, "first");
+        ingest(&storage, "second");
+        let newest = ingest(&storage, "third");
+
+        let center = default_center_id(&storage, GraphSort::Recent).unwrap();
+        assert_eq!(
+            center, newest,
+            "Recent mode should pick the newest ingested memory"
+        );
+    }
+
+    fn link(storage: &Storage, source: &str, target: &str) {
+        let now = Utc::now();
+        storage
+            .save_connection(&ConnectionRecord {
+                source_id: source.to_string(),
+                target_id: target.to_string(),
+                strength: 0.9,
+                link_type: "semantic".to_string(),
+                created_at: now,
+                last_activated: now,
+                activation_count: 0,
+            })
+            .unwrap();
+    }
+
+    #[test]
+    fn default_center_id_connected_prefers_hub_over_newest() {
+        let (_dir, storage) = seed_storage();
+        let hub = ingest(&storage, "hub node");
+        let spoke_a = ingest(&storage, "spoke A");
+        let spoke_b = ingest(&storage, "spoke B");
+        let spoke_c = ingest(&storage, "spoke C");
+        // Wire the spokes into `hub` so it has the most connections. Leave
+        // the final `lonely` node unconnected — it's the newest by
+        // insertion order and would win in Recent mode.
+        for spoke in [&spoke_a, &spoke_b, &spoke_c] {
+            link(&storage, &hub, spoke);
+        }
+        let _lonely = ingest(&storage, "lonely newcomer");
+
+        let center = default_center_id(&storage, GraphSort::Connected).unwrap();
+        assert_eq!(
+            center, hub,
+            "Connected mode should pick the densest node, not the newest"
+        );
+    }
+
+    #[test]
+    fn default_center_id_connected_falls_back_to_recent_when_no_edges() {
+        let (_dir, storage) = seed_storage();
+        ingest(&storage, "alpha");
+        let newest = ingest(&storage, "beta");
+
+        // No connections exist — Connected mode should degrade to Recent
+        // rather than returning 404.
+        let center = default_center_id(&storage, GraphSort::Connected).unwrap();
+        assert_eq!(center, newest);
+    }
+
+    #[test]
+    fn default_center_id_returns_not_found_on_empty_db() {
+        let (_dir, storage) = seed_storage();
+
+        let recent_err = default_center_id(&storage, GraphSort::Recent).unwrap_err();
+        assert_eq!(recent_err, StatusCode::NOT_FOUND);
+
+        let connected_err = default_center_id(&storage, GraphSort::Connected).unwrap_err();
+        assert_eq!(connected_err, StatusCode::NOT_FOUND);
+    }
 }

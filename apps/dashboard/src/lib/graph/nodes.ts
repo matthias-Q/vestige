@@ -67,7 +67,7 @@ export function getNodeColor(node: GraphNode, mode: ColorMode): string {
 // hard-edged "glowing cubes" artefact reported in issue #31. Using a
 // soft radial gradient gives a real round halo and lets bloom do its job.
 let sharedGlowTexture: THREE.Texture | null = null;
-function getGlowTexture(): THREE.Texture {
+export function getGlowTexture(): THREE.Texture {
 	if (sharedGlowTexture) return sharedGlowTexture;
 	const size = 128;
 	const canvas = document.createElement('canvas');
@@ -271,7 +271,11 @@ export class NodeManager {
 		return { mesh, glow: sprite, label: labelSprite, size };
 	}
 
-	addNode(node: GraphNode, initialPosition?: THREE.Vector3): THREE.Vector3 {
+	addNode(
+		node: GraphNode,
+		initialPosition?: THREE.Vector3,
+		options: { isBirthRitual?: boolean } = {}
+	): THREE.Vector3 {
 		const pos =
 			initialPosition?.clone() ??
 			new THREE.Vector3(
@@ -289,17 +293,62 @@ export class NodeManager {
 		(glow.material as THREE.SpriteMaterial).opacity = 0;
 		(label.material as THREE.SpriteMaterial).opacity = 0;
 
+		if (options.isBirthRitual) {
+			// v2.3 Birth Ritual: reserve the physics slot but don't show
+			// anything until the orb docks. Hiding via .visible keeps the
+			// force simulation + positions map fully active, so getTargetPos()
+			// can still resolve the live destination for the orb. `igniteNode`
+			// below flips visibility and kicks off the materialization anim.
+			mesh.visible = false;
+			glow.visible = false;
+			label.visible = false;
+			mesh.userData.birthRitualPending = {
+				totalFrames: 30,
+				targetScale: 0.5 + node.retention * 2,
+			};
+		} else {
+			this.materializingNodes.push({
+				id: node.id,
+				frame: 0,
+				totalFrames: 30,
+				mesh,
+				glow,
+				label,
+				targetScale: 0.5 + node.retention * 2,
+			});
+		}
+
+		return pos;
+	}
+
+	/**
+	 * v2.3 Birth Ritual docking. Flip visibility and hand the node over to
+	 * the materialization queue so it springs up via easeOutElastic at the
+	 * exact moment the orb hits. No-op if the node wasn't created with
+	 * `isBirthRitual:true` or was already ignited.
+	 */
+	igniteNode(id: string) {
+		const mesh = this.meshMap.get(id);
+		const glow = this.glowMap.get(id);
+		const label = this.labelSprites.get(id);
+		if (!mesh || !glow || !label) return;
+		const pending = mesh.userData.birthRitualPending as
+			| { totalFrames: number; targetScale: number }
+			| undefined;
+		if (!pending) return;
+		mesh.visible = true;
+		glow.visible = true;
+		label.visible = true;
+		delete mesh.userData.birthRitualPending;
 		this.materializingNodes.push({
-			id: node.id,
+			id,
 			frame: 0,
-			totalFrames: 30,
+			totalFrames: pending.totalFrames,
 			mesh,
 			glow,
 			label,
-			targetScale: 0.5 + node.retention * 2,
+			targetScale: pending.targetScale,
 		});
-
-		return pos;
 	}
 
 	removeNode(id: string) {
@@ -446,7 +495,12 @@ export class NodeManager {
 		});
 	}
 
-	animate(time: number, nodes: GraphNode[], camera: THREE.PerspectiveCamera) {
+	animate(
+		time: number,
+		nodes: GraphNode[],
+		camera: THREE.PerspectiveCamera,
+		brightness: number = 1.0
+	) {
 		// Materialization animations — elastic scale-up from 0
 		for (let i = this.materializingNodes.length - 1; i >= 0; i--) {
 			const mn = this.materializingNodes[i];
@@ -552,16 +606,38 @@ export class NodeManager {
 				1 + Math.sin(time * 1.5 + nodes.indexOf(node) * 0.5) * 0.15 * node.retention;
 			mesh.scale.setScalar(breathe);
 
+			// Distance compensation: FogExp2 attenuates exponentially with camera
+			// distance, so nodes past ~80 units go nearly black unless we push
+			// emissive harder. Boost runs 1.0x at <60 units → ~2.4x at 200 units.
+			// Combined with the user brightness multiplier this gives a visible
+			// floor at every zoom level without blowing out close-up highlights.
+			const pos = this.positions.get(id);
+			const dist = pos ? camera.position.distanceTo(pos) : 0;
+			const distanceBoost = 1 + Math.min(1.4, Math.max(0, (dist - 60) / 100));
+
 			const mat = mesh.material as THREE.MeshStandardMaterial;
 			if (id === this.hoveredNode) {
-				mat.emissiveIntensity = 1.0;
+				mat.emissiveIntensity = 1.0 * brightness;
 			} else if (id === this.selectedNode) {
-				mat.emissiveIntensity = 0.8;
+				mat.emissiveIntensity = 0.8 * brightness;
 			} else {
 				const baseIntensity = 0.3 + node.retention * 0.5;
 				const breatheIntensity =
 					baseIntensity + Math.sin(time * (0.8 + node.retention * 0.7)) * 0.1 * node.retention;
-				mat.emissiveIntensity = breatheIntensity;
+				mat.emissiveIntensity = breatheIntensity * brightness * distanceBoost;
+			}
+
+			// Opacity also gets the distance boost (capped at 1.0) so the node
+			// body stays visible against the dark void at far zoom.
+			const baseOpacity = 0.3 + node.retention * 0.7;
+			mat.opacity = Math.min(1.0, baseOpacity * brightness * distanceBoost);
+
+			// Mirror the boost onto the glow sprite so the halo tracks the core.
+			const glow = this.glowMap.get(id);
+			if (glow) {
+				const glowMat = glow.material as THREE.SpriteMaterial;
+				const baseGlow = 0.3 + node.retention * 0.35;
+				glowMat.opacity = Math.min(0.95, baseGlow * brightness * distanceBoost);
 			}
 		});
 
