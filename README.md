@@ -29,6 +29,27 @@ Autopilot flips Vestige from passive memory library to **self-managing cognitive
 - **Fully backward compatible.** No new MCP tools. No schema migration. Existing v2.0.8 databases open without a single step. Opt out with `VESTIGE_AUTOPILOT_ENABLED=0` if you want the passive-library contract back.
 - **3,091 LOC of orphan v1.0 tool code removed** — nine superseded modules (`checkpoint`, `codebase`, `consolidate`, `ingest`, `intentions`, `knowledge`, `recall`, plus helpers) verified zero non-test callers before deletion. Tool surface unchanged.
 
+## What's New in v2.0.8 "Pulse"
+
+v2.0.8 wires the dashboard through to the cognitive engine. Eight new surfaces expose the reasoning stack visually — every one was MCP-only before.
+
+- **Reasoning Theater (`/reasoning`)** — `Cmd+K` Ask palette over the 8-stage `deep_reference` pipeline (hybrid retrieval → cross-encoder rerank → spreading activation → FSRS-6 trust → temporal supersession → contradiction analysis → relation assessment → template reasoning chain). Evidence cards, confidence meter, contradiction geodesic arcs, superseded-memory lineage, evolution timeline. **Zero LLM calls, 100% local.**
+- **Pulse InsightToast** — real-time toasts for `DreamCompleted`, `ConsolidationCompleted`, `ConnectionDiscovered`, promote/demote/suppress/unsuppress, `Rac1CascadeSwept`. Rate-limited, auto-dismiss, click-to-dismiss.
+- **Memory Birth Ritual (Terrarium)** — new memories materialize in the 3D graph on every `MemoryCreated`: elastic scale-in, quadratic Bezier flight path, glow sprite fade-in, Newton's Cradle docking recoil. 60-frame sequence, zero-alloc math.
+- **7 more dashboard surfaces** — `/duplicates`, `/dreams`, `/schedule`, `/importance`, `/activation`, `/contradictions`, `/patterns`. Left nav expanded 8 → 16 with single-key shortcuts.
+- **Intel Mac (`x86_64-apple-darwin`) support restored** via the `ort-dynamic` Cargo feature + Homebrew `onnxruntime`. Microsoft deprecated x86_64 macOS prebuilts; the dynamic-link path sidesteps that permanently. **Closes #41.**
+- **Contradiction-detection false positives eliminated** — four thresholds tightened so adjacent-domain memories no longer flag as conflicts. On an FSRS-6 query this collapses false contradictions 12 → 0 without regressing legitimate test cases.
+
+## What's New in v2.0.7 "Visible"
+
+Hygiene release closing two UI gaps and finishing schema cleanup. No breaking changes, no user-data migrations.
+
+- **`POST /api/memories/{id}/suppress` + `/unsuppress` HTTP endpoints** — dashboard can trigger Anderson 2025 SIF + Rac1 cascade without dropping to raw MCP. `suppressionCount`, `retrievalPenalty`, `reversibleUntil`, `labileWindowHours` all in response. Suppress button joins Promote / Demote / Delete on the Memories page.
+- **Uptime in the sidebar footer** — the `Heartbeat` event has carried `uptime_secs` since v2.0.5 but was never rendered. Now shows as `up 3d 4h` / `up 18m` / `up 47s`.
+- **`execute_export` panic fix** — unreachable match arm replaced with a clean "unsupported export format" error instead of unwinding through the MCP dispatcher.
+- **`predict` surfaces `predict_degraded: true`** on lock poisoning instead of silently returning empty vecs. `memory_changelog` honors `start` / `end` bounds. `intention` check honors `include_snoozed`.
+- **Migration V11** — drops dead `knowledge_edges` + `compressed_memories` tables (added speculatively in V4, never used).
+
 ## What's New in v2.0.6 "Composer"
 
 v2.0.6 is a polish release that makes the existing cognitive stack finally *feel* alive in the dashboard and stays out of your way on the prompt side.
