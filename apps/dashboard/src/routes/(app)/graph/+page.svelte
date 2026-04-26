@@ -10,7 +10,7 @@
 	import { graphState } from '$stores/graph-state.svelte';
 	import type { GraphResponse, GraphNode, GraphEdge, Memory } from '$types';
 	import type { GraphMutation } from '$lib/graph/events';
-	import type { ColorMode } from '$lib/graph/nodes';
+	import { AHAGRAPH_COLORS, AHAGRAPH_DESCRIPTIONS, type ColorMode } from '$lib/graph/nodes';
 	import { filterByDate } from '$lib/graph/temporal';
 
 	let graphData: GraphResponse | null = $state(null);
@@ -22,10 +22,12 @@
 	let maxNodes = $state(150);
 	let temporalEnabled = $state(false);
 	let temporalDate = $state(new Date());
-	// v2.0.8: colour spheres by node type (default) or by FSRS memory state
-	// (Active / Dormant / Silent / Unavailable). Legend overlay renders when
-	// state mode is active.
+	// Colour spheres by node type, FSRS memory state, or AhaGraph learning tags.
 	let colorMode: ColorMode = $state('type');
+	const ahagraphLegendEntries = Object.entries(AHAGRAPH_COLORS) as Array<[
+		keyof typeof AHAGRAPH_COLORS,
+		string
+	]>;
 
 	// Live counts that update on mutations
 	let liveNodeCount = $state(0);
@@ -78,7 +80,17 @@
 		}
 	}
 
-	onMount(() => loadGraph());
+	onMount(() => {
+		const requestedMode = new URLSearchParams(window.location.search).get('colorMode');
+		if (isColorMode(requestedMode)) {
+			colorMode = requestedMode;
+		}
+		void loadGraph();
+	});
+
+	function isColorMode(value: string | null): value is ColorMode {
+		return value === 'type' || value === 'state' || value === 'ahagraph';
+	}
 
 	async function loadGraph(query?: string, centerId?: string) {
 		loading = true;
@@ -292,6 +304,16 @@ disown</code>
 				>
 					State
 				</button>
+				<button
+					type="button"
+					role="radio"
+					aria-checked={colorMode === 'ahagraph'}
+					onclick={() => (colorMode = 'ahagraph')}
+					class="px-3 py-1.5 rounded-lg transition {colorMode === 'ahagraph' ? 'bg-synapse/25 text-synapse-glow' : 'text-dim hover:text-text'}"
+					title="Colour by AhaGraph tags (aha / confusion / failure)"
+				>
+					AhaGraph
+				</button>
 			</div>
 
 			<!-- Node count -->
@@ -359,6 +381,20 @@ disown</code>
 	{#if colorMode === 'state'}
 		<div class="absolute bottom-4 right-4 z-10">
 			<MemoryStateLegend />
+		</div>
+	{/if}
+
+	{#if colorMode === 'ahagraph'}
+		<div class="absolute bottom-4 right-4 z-10 glass rounded-xl px-4 py-3 text-xs">
+			<div class="text-bright font-semibold mb-2">AhaGraph</div>
+			<div class="space-y-1.5">
+				{#each ahagraphLegendEntries as [kind, color]}
+					<div class="flex items-center gap-2">
+						<span class="w-2.5 h-2.5 rounded-full" style="background: {color}"></span>
+						<span class="text-dim">{AHAGRAPH_DESCRIPTIONS[kind]}</span>
+					</div>
+				{/each}
+			</div>
 		</div>
 	{/if}
 

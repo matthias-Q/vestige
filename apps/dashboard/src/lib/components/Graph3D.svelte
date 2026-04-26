@@ -20,9 +20,9 @@
 		centerId: string;
 		events?: VestigeEvent[];
 		isDreaming?: boolean;
-		/// v2.0.8: colour mode for node spheres. "type" tints by node type
-		/// (fact/concept/event/…); "state" tints by FSRS accessibility bucket
-		/// (active/dormant/silent/unavailable). Toggled live from the graph page.
+		/// Colour mode for node spheres. "type" tints by node type, "state"
+		/// tints by FSRS accessibility bucket, and "ahagraph" tints by
+		/// learning tags from AhaGraph.
 		colorMode?: ColorMode;
 		onSelect?: (nodeId: string) => void;
 		onGraphMutation?: (mutation: GraphMutation) => void;
