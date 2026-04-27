@@ -142,7 +142,10 @@ fn build_router_inner(state: AppState, port: u16) -> (Router, AppState) {
         // since v2.0.5 despite having full graph event handlers; this closes
         // the gap so dashboard users can trigger inhibition without dropping
         // to the MCP layer.
-        .route("/api/memories/{id}/suppress", post(handlers::suppress_memory))
+        .route(
+            "/api/memories/{id}/suppress",
+            post(handlers::suppress_memory),
+        )
         .route(
             "/api/memories/{id}/unsuppress",
             post(handlers::unsuppress_memory),
@@ -154,6 +157,7 @@ fn build_router_inner(state: AppState, port: u16) -> (Router, AppState) {
         .route("/api/health", get(handlers::health_check))
         // Timeline
         .route("/api/timeline", get(handlers::get_timeline))
+        .route("/api/changelog", get(handlers::get_changelog))
         // Graph
         .route("/api/graph", get(handlers::get_graph))
         // Cognitive operations (v2.0)
@@ -171,10 +175,7 @@ fn build_router_inner(state: AppState, port: u16) -> (Router, AppState) {
         // Reasoning Theater (v2.0.8) — 8-stage cognitive pipeline surface.
         // Wraps crate::tools::cross_reference::execute. Emits
         // DeepReferenceCompleted so Graph3D can glide, pulse, and arc.
-        .route(
-            "/api/deep_reference",
-            post(handlers::deep_reference_query),
-        )
+        .route("/api/deep_reference", post(handlers::deep_reference_query))
         .layer(
             ServiceBuilder::new()
                 .concurrency_limit(50)

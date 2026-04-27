@@ -93,10 +93,11 @@ export FASTEMBED_CACHE_PATH="$HOME/.fastembed_cache"
 |----------|-------------|---------|
 | `RUST_LOG` | Log verbosity + per-module filter | `info` |
 | `FASTEMBED_CACHE_PATH` | Embeddings model cache | `./.fastembed_cache` |
+| `VESTIGE_DATA_DIR` | Storage directory fallback; database lives at `<dir>/vestige.db` | OS data dir |
 | `VESTIGE_DASHBOARD_PORT` | Dashboard port | `3927` |
 | `VESTIGE_AUTH_TOKEN` | Bearer auth for dashboard + HTTP MCP | auto-generated |
 
-Storage location is the `--data-dir <path>` CLI flag (defaults to your OS's per-user data directory).
+Storage precedence is `--data-dir <path>`, then `VESTIGE_DATA_DIR`, then your OS's per-user data directory.
 
 ## Troubleshooting
 

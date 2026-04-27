@@ -1,0 +1,23 @@
+{
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          { "type": "command", "command": "$HOME/.claude/hooks/synthesis-preflight.sh", "timeout": 8 },
+          { "type": "command", "command": "$HOME/.claude/hooks/cwd-state-injector.sh", "timeout": 8 },
+          { "type": "command", "command": "$HOME/.claude/hooks/vestige-pulse-daemon.sh", "timeout": 6 },
+          { "type": "command", "command": "$HOME/.claude/hooks/preflight-swarm.sh", "timeout": 45 }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          { "type": "command", "command": "$HOME/.claude/hooks/veto-detector.sh", "timeout": 6 },
+          { "type": "command", "command": "$HOME/.claude/hooks/sanhedrin.sh", "timeout": 70 },
+          { "type": "command", "command": "$HOME/.claude/hooks/synthesis-stop-validator.sh", "timeout": 6 }
+        ]
+      }
+    ]
+  }
+}

@@ -31,16 +31,17 @@ export FASTEMBED_CACHE_PATH="/custom/path"
 
 | Variable | Default | Description |
 |----------|---------|-------------|
+| `VESTIGE_DATA_DIR` | OS per-user data directory | Storage directory fallback; overridden by `--data-dir`; database lives at `<dir>/vestige.db` |
 | `RUST_LOG` | `info` (via tracing-subscriber) | Log verbosity + per-module filtering |
 | `FASTEMBED_CACHE_PATH` | `./.fastembed_cache` | Embedding model cache location |
 | `VESTIGE_DASHBOARD_PORT` | `3927` | Dashboard HTTP + WebSocket port |
 | `VESTIGE_HTTP_PORT` | `3928` | Optional MCP-over-HTTP port |
 | `VESTIGE_HTTP_BIND` | `127.0.0.1` | HTTP bind address |
 | `VESTIGE_AUTH_TOKEN` | auto-generated | Dashboard + MCP HTTP bearer auth |
-| `VESTIGE_DASHBOARD_ENABLED` | `true` | Set `false` to disable the web dashboard |
+| `VESTIGE_DASHBOARD_ENABLED` | `false` | Set `true` or `1` to enable the web dashboard |
 | `VESTIGE_CONSOLIDATION_INTERVAL_HOURS` | `6` | FSRS-6 decay cycle cadence |
 
-> **Storage location** is controlled by the `--data-dir <path>` CLI flag (see below), not an env var. Default is your OS's per-user data directory: `~/Library/Application Support/com.vestige.core/` on macOS, `~/.local/share/vestige/` on Linux, `%APPDATA%\vestige\core\data\` on Windows.
+> **Storage location precedence:** `--data-dir <path>` wins over `VESTIGE_DATA_DIR`; if neither is set, Vestige uses your OS's per-user data directory: `~/Library/Application Support/com.vestige.core/` on macOS, `~/.local/share/vestige/core/` on Linux, `%APPDATA%\vestige\core\` on Windows. Custom paths are directories, are created if missing, expand a leading `~`, and store the database at `<dir>/vestige.db`.
 
 ---
 
@@ -48,6 +49,7 @@ export FASTEMBED_CACHE_PATH="/custom/path"
 
 ```bash
 vestige-mcp --data-dir /custom/path   # Custom storage location
+VESTIGE_DATA_DIR=~/.vestige vestige-mcp # Env fallback storage location
 vestige-mcp --help                     # Show all options
 ```
 
@@ -145,6 +147,14 @@ For per-project or custom storage:
   }
 }
 ```
+
+For a shell-level default:
+
+```bash
+export VESTIGE_DATA_DIR="/path/to/custom/dir"
+```
+
+`--data-dir` takes precedence over `VESTIGE_DATA_DIR`, so you can keep a global env default and still isolate one client or project with an explicit CLI argument.
 
 See [Storage Modes](STORAGE.md) for more options.
 

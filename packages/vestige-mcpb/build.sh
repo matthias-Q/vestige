@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-VERSION="${1:-1.1.0}"
+VERSION="${1:-2.1.0}"
 REPO="samvallad33/vestige"
 
 echo "Building Vestige MCPB v${VERSION}..."

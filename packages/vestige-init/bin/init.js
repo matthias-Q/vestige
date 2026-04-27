@@ -5,13 +5,14 @@ const path = require('path');
 const os = require('os');
 const { execSync } = require('child_process');
 
+const PACKAGE_VERSION = require('../package.json').version;
 const HOME = os.homedir();
 const PLATFORM = os.platform();
 
 // ─── Branding ───────────────────────────────────────────────────────────────
 
 const BANNER = `
-  vestige init v2.0
+  vestige init v${PACKAGE_VERSION}
   Give your AI a brain in 10 seconds.
   Now with 3D dashboard at localhost:3927/dashboard
 `;

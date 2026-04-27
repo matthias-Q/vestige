@@ -738,7 +738,10 @@ mod tests {
 
         // 1. schema_version advanced to V11
         let version = get_current_version(&conn).expect("read schema_version");
-        assert_eq!(version, 11, "schema_version must be 11 after all migrations");
+        assert_eq!(
+            version, 11,
+            "schema_version must be 11 after all migrations"
+        );
 
         // 2. knowledge_edges is gone (V11 drops it)
         let knowledge_edges_rows: i64 = conn

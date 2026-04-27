@@ -6,7 +6,7 @@
 
 [![GitHub stars](https://img.shields.io/github/stars/samvallad33/vestige?style=social)](https://github.com/samvallad33/vestige)
 [![Release](https://img.shields.io/github/v/release/samvallad33/vestige)](https://github.com/samvallad33/vestige/releases/latest)
-[![Tests](https://img.shields.io/badge/tests-1223%20passing-brightgreen)](https://github.com/samvallad33/vestige/actions)
+[![Tests](https://img.shields.io/badge/tests-1229%20passing-brightgreen)](https://github.com/samvallad33/vestige/actions)
 [![License](https://img.shields.io/badge/license-AGPL--3.0-blue)](LICENSE)
 [![MCP Compatible](https://img.shields.io/badge/MCP-compatible-green)](https://modelcontextprotocol.io)
 
@@ -19,6 +19,16 @@ Built on 130 years of memory research — FSRS-6 spaced repetition, prediction e
 </div>
 
 ---
+
+## What's New in v2.1.0 "Cognitive Sandwich Goes Local"
+
+v2.1.0 adds an opt-in Claude Code hook harness around the existing Vestige MCP server. The MCP tool surface and database schema stay backward compatible, while the new local Sanhedrin verifier and preflight hooks can inject trusted memory context before Claude answers and check drafts against high-trust Vestige evidence before delivery.
+
+- **Local Sanhedrin Executioner.** The post-response verifier now runs through `mlx_lm.server` with `mlx-community/Qwen3.6-35B-A3B-4bit` by default, so the veto layer can run offline on Apple Silicon without Anthropic API calls.
+- **One-command Cognitive Sandwich installer.** `scripts/install-sandwich.sh` stages hooks, agents, and a launchd plist, merges the Claude Code hooks block, and prints real verification commands.
+- **Pulse hook backed by `/api/changelog`.** Fresh dream and connection events can be injected into the next Claude Code prompt context without blocking the prompt.
+- **`VESTIGE_DATA_DIR` support.** `--data-dir` now has an env-var fallback, tilde expansion, secure directory creation, and clear precedence docs.
+- **NPM release wrapper fixed.** `vestige-mcp-server@2.1.0` now downloads binaries from the matching `v2.1.0` GitHub release tag instead of an old hardcoded release.
 
 ## What's New in v2.0.9 "Autopilot"
 

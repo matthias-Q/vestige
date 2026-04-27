@@ -14,6 +14,14 @@ All memories are stored in a **single local SQLite file**:
 | Linux | `~/.local/share/vestige/core/vestige.db` |
 | Windows | `%APPDATA%\vestige\core\vestige.db` |
 
+Override precedence:
+
+1. `vestige-mcp --data-dir <path>`
+2. `VESTIGE_DATA_DIR=<path>`
+3. OS default shown above
+
+`--data-dir` and `VESTIGE_DATA_DIR` both point to a **directory**, not the database file itself. Vestige creates the directory if it does not exist, expands a leading `~`, and stores the database at `<data-dir>/vestige.db`.
+
 ---
 
 ## Storage Modes
@@ -28,6 +36,12 @@ One shared memory for all projects. Good for:
 ```bash
 # Default behavior - no configuration needed
 claude mcp add vestige vestige-mcp -s user
+```
+
+To set a global override for all MCP launches that inherit your shell environment:
+
+```bash
+export VESTIGE_DATA_DIR="~/.vestige"
 ```
 
 ### Option 2: Per-Project Memory
@@ -52,6 +66,8 @@ Add to your project's `.claude/settings.local.json`:
 ```
 
 This creates `.vestige/vestige.db` in your project root. Add `.vestige/` to `.gitignore`.
+
+If both `VESTIGE_DATA_DIR` and `--data-dir` are set, the CLI flag wins. Use the env var for a machine-wide default and the CLI flag for per-client or per-project overrides.
 
 **Multiple Named Instances:**
 

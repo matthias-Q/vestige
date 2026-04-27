@@ -153,10 +153,8 @@ pub fn spawn(
                             backoff_secs = SUPERVISOR_RESTART_BACKOFF_SECS,
                             "Autopilot event subscriber panicked — supervisor restarting"
                         );
-                        tokio::time::sleep(Duration::from_secs(
-                            SUPERVISOR_RESTART_BACKOFF_SECS,
-                        ))
-                        .await;
+                        tokio::time::sleep(Duration::from_secs(SUPERVISOR_RESTART_BACKOFF_SECS))
+                            .await;
                     }
                     Err(e) => {
                         warn!(error = ?e, "Autopilot event subscriber join error — exiting");
@@ -187,10 +185,8 @@ pub fn spawn(
                             backoff_secs = SUPERVISOR_RESTART_BACKOFF_SECS,
                             "Autopilot prospective poller panicked — supervisor restarting"
                         );
-                        tokio::time::sleep(Duration::from_secs(
-                            SUPERVISOR_RESTART_BACKOFF_SECS,
-                        ))
-                        .await;
+                        tokio::time::sleep(Duration::from_secs(SUPERVISOR_RESTART_BACKOFF_SECS))
+                            .await;
                     }
                     Err(e) => {
                         warn!(error = ?e, "Autopilot prospective poller join error — exiting");
@@ -218,14 +214,7 @@ async fn run_event_subscriber(
     loop {
         match rx.recv().await {
             Ok(event) => {
-                handle_event(
-                    event,
-                    &cognitive,
-                    &storage,
-                    &event_tx,
-                    &mut dedup_state,
-                )
-                .await;
+                handle_event(event, &cognitive, &storage, &event_tx, &mut dedup_state).await;
             }
             Err(broadcast::error::RecvError::Lagged(n)) => {
                 warn!("Autopilot lagged {n} events — increase channel capacity if this persists");

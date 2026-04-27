@@ -6,8 +6,9 @@ const path = require('path');
 const os = require('os');
 const { execSync } = require('child_process');
 
-const VERSION = require('../package.json').version;
-const BINARY_VERSION = '2.0.1'; // GitHub release version for binaries
+const packageJson = require('../package.json');
+const VERSION = packageJson.version;
+const BINARY_VERSION = VERSION;
 const PLATFORM = os.platform();
 const ARCH = os.arch();
 
@@ -39,6 +40,21 @@ const downloadUrl = `https://github.com/samvallad33/vestige/releases/download/v$
 
 const targetDir = path.join(__dirname, '..', 'bin');
 const archivePath = path.join(targetDir, archiveName);
+
+function isWorkspaceCheckout() {
+  const packageRoot = path.resolve(__dirname, '..');
+  const repoRoot = path.resolve(packageRoot, '..', '..');
+  return (
+    path.basename(packageRoot) === 'vestige-mcp-npm' &&
+    path.basename(path.dirname(packageRoot)) === 'packages' &&
+    fs.existsSync(path.join(repoRoot, 'pnpm-workspace.yaml'))
+  );
+}
+
+if (process.env.VESTIGE_SKIP_BINARY_DOWNLOAD === '1' || isWorkspaceCheckout()) {
+  console.log('Skipping Vestige binary download in local workspace checkout.');
+  process.exit(0);
+}
 
 console.log(`Installing Vestige MCP v${VERSION} for ${target}...`);
 

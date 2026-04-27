@@ -2,10 +2,12 @@
 //!
 //! v2.0: Adds cognitive operation endpoints (dream, explore, predict, importance, consolidation)
 
+use std::cmp::Reverse;
+
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::response::{Json, Redirect};
-use chrono::{Duration, Utc};
+use chrono::{DateTime, Duration, Utc};
 use serde::Deserialize;
 use serde_json::Value;
 
@@ -373,6 +375,13 @@ pub struct TimelineParams {
     pub limit: Option<i32>,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct ChangelogParams {
+    pub start: Option<String>,
+    pub end: Option<String>,
+    pub limit: Option<i32>,
+}
+
 /// Get timeline data
 pub async fn get_timeline(
     State(state): State<AppState>,
@@ -426,6 +435,108 @@ pub async fn get_timeline(
         "totalMemories": nodes.len(),
         "timeline": timeline,
     })))
+}
+
+/// Recent cognitive events in the same envelope used by the WebSocket event
+/// stream. The pulse hook polls this endpoint once per Claude wake, so keep it
+/// cheap, bounded, and tolerant of empty history.
+pub async fn get_changelog(
+    State(state): State<AppState>,
+    Query(params): Query<ChangelogParams>,
+) -> Result<Json<Value>, StatusCode> {
+    let limit = params.limit.unwrap_or(50).clamp(1, 100);
+    let start = parse_changelog_bound(params.start.as_deref())?;
+    let end = parse_changelog_bound(params.end.as_deref())?;
+    let fetch_limit = if start.is_some() || end.is_some() {
+        limit.saturating_mul(4)
+    } else {
+        limit
+    };
+
+    let mut events: Vec<(DateTime<Utc>, Value)> = Vec::new();
+
+    let dreams = state
+        .storage
+        .get_dream_history(fetch_limit)
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    for dream in dreams {
+        if changelog_window_contains(dream.dreamed_at, start.as_ref(), end.as_ref()) {
+            events.push((dream.dreamed_at, dream_changelog_event(&dream)));
+        }
+    }
+
+    // Connections are currently persisted as graph edges rather than as audit
+    // rows, so filter by created_at from the connection table.
+    let connections = state
+        .storage
+        .get_all_connections()
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    for conn in connections {
+        if changelog_window_contains(conn.created_at, start.as_ref(), end.as_ref()) {
+            events.push((conn.created_at, connection_changelog_event(&conn)));
+        }
+    }
+
+    events.sort_by_key(|event| Reverse(event.0));
+    events.truncate(limit as usize);
+    let formatted_events: Vec<Value> = events.into_iter().map(|(_, event)| event).collect();
+    let total_events = formatted_events.len();
+
+    Ok(Json(serde_json::json!({
+        "events": formatted_events,
+        "totalEvents": total_events,
+        "filter": {
+            "start": start.as_ref().map(DateTime::to_rfc3339),
+            "end": end.as_ref().map(DateTime::to_rfc3339),
+            "limit": limit,
+        },
+    })))
+}
+
+fn parse_changelog_bound(raw: Option<&str>) -> Result<Option<DateTime<Utc>>, StatusCode> {
+    match raw {
+        Some(value) if !value.trim().is_empty() => DateTime::parse_from_rfc3339(value)
+            .map(|dt| Some(dt.with_timezone(&Utc)))
+            .map_err(|_| StatusCode::BAD_REQUEST),
+        _ => Ok(None),
+    }
+}
+
+fn changelog_window_contains(
+    ts: DateTime<Utc>,
+    start: Option<&DateTime<Utc>>,
+    end: Option<&DateTime<Utc>>,
+) -> bool {
+    start.is_none_or(|s| ts >= *s) && end.is_none_or(|e| ts <= *e)
+}
+
+fn dream_changelog_event(dream: &vestige_core::DreamHistoryRecord) -> Value {
+    serde_json::json!({
+        "type": "DreamCompleted",
+        "timestamp": dream.dreamed_at.to_rfc3339(),
+        "data": {
+            "memories_replayed": dream.memories_replayed,
+            "connections_found": dream.connections_found,
+            "connections_persisted": dream.connections_found,
+            "insights_generated": dream.insights_generated,
+            "duration_ms": dream.duration_ms,
+            "timestamp": dream.dreamed_at.to_rfc3339(),
+        },
+    })
+}
+
+fn connection_changelog_event(conn: &vestige_core::ConnectionRecord) -> Value {
+    serde_json::json!({
+        "type": "ConnectionDiscovered",
+        "timestamp": conn.created_at.to_rfc3339(),
+        "data": {
+            "source_id": &conn.source_id,
+            "target_id": &conn.target_id,
+            "connection_type": &conn.link_type,
+            "weight": conn.strength,
+            "timestamp": conn.created_at.to_rfc3339(),
+        },
+    })
 }
 
 /// Health check
@@ -537,7 +648,9 @@ pub async fn get_graph(
         && edges.is_empty()
         && let Ok(fallback) = default_center_id(&state.storage, GraphSort::Connected)
         && fallback != center_id
-        && let Ok((n2, e2)) = state.storage.get_memory_subgraph(&fallback, depth, max_nodes)
+        && let Ok((n2, e2)) = state
+            .storage
+            .get_memory_subgraph(&fallback, depth, max_nodes)
         && n2.len() > nodes.len()
     {
         center_id = fallback;
@@ -793,14 +906,38 @@ pub async fn trigger_dream(State(state): State<AppState>) -> Result<Json<Value>,
     }
 
     let duration_ms = start.elapsed().as_millis() as u64;
+    let completed_at = Utc::now();
+    let insights_generated = insights.len();
+
+    if let Err(e) = state
+        .storage
+        .save_dream_history(&vestige_core::DreamHistoryRecord {
+            dreamed_at: completed_at,
+            duration_ms: duration_ms as i64,
+            memories_replayed: dream_memories.len() as i32,
+            connections_found: connections_persisted as i32,
+            insights_generated: insights_generated as i32,
+            memories_strengthened: dream_result.memories_strengthened as i32,
+            memories_compressed: dream_result.memories_compressed as i32,
+            phase_nrem1_ms: None,
+            phase_nrem3_ms: None,
+            phase_rem_ms: None,
+            phase_integration_ms: None,
+            summaries_generated: None,
+            emotional_memories_processed: None,
+            creative_connections_found: None,
+        })
+    {
+        tracing::warn!("Failed to persist dashboard dream history: {}", e);
+    }
 
     // Emit completion event
     state.emit(VestigeEvent::DreamCompleted {
         memories_replayed: dream_memories.len(),
         connections_found: connections_persisted as usize,
-        insights_generated: insights.len(),
+        insights_generated,
         duration_ms,
-        timestamp: Utc::now(),
+        timestamp: completed_at,
     });
 
     Ok(Json(serde_json::json!({
@@ -1303,7 +1440,7 @@ mod tests {
     use std::sync::Arc;
     use tempfile::tempdir;
     use vestige_core::memory::IngestInput;
-    use vestige_core::{ConnectionRecord, Storage};
+    use vestige_core::{ConnectionRecord, DreamHistoryRecord, Storage};
 
     #[test]
     fn graph_sort_parse_defaults_to_recent() {
@@ -1320,6 +1457,51 @@ mod tests {
         assert_eq!(GraphSort::parse(Some("connected")), GraphSort::Connected);
         assert_eq!(GraphSort::parse(Some("CONNECTED")), GraphSort::Connected);
         assert_eq!(GraphSort::parse(Some("Connected")), GraphSort::Connected);
+    }
+
+    #[test]
+    fn changelog_dream_event_uses_pulse_compatible_shape() {
+        let now = Utc::now();
+        let event = dream_changelog_event(&DreamHistoryRecord {
+            dreamed_at: now,
+            duration_ms: 1234,
+            memories_replayed: 12,
+            connections_found: 3,
+            insights_generated: 2,
+            memories_strengthened: 0,
+            memories_compressed: 0,
+            phase_nrem1_ms: None,
+            phase_nrem3_ms: None,
+            phase_rem_ms: None,
+            phase_integration_ms: None,
+            summaries_generated: None,
+            emotional_memories_processed: None,
+            creative_connections_found: None,
+        });
+
+        assert_eq!(event["type"], "DreamCompleted");
+        assert_eq!(event["data"]["insights_generated"], 2);
+        assert_eq!(event["data"]["connections_persisted"], 3);
+        assert_eq!(event["data"]["timestamp"], now.to_rfc3339());
+    }
+
+    #[test]
+    fn changelog_connection_event_uses_pulse_compatible_shape() {
+        let now = Utc::now();
+        let event = connection_changelog_event(&ConnectionRecord {
+            source_id: "source-memory".to_string(),
+            target_id: "target-memory".to_string(),
+            strength: 0.82,
+            link_type: "semantic".to_string(),
+            created_at: now,
+            last_activated: now,
+            activation_count: 1,
+        });
+
+        assert_eq!(event["type"], "ConnectionDiscovered");
+        assert_eq!(event["data"]["source_id"], "source-memory");
+        assert_eq!(event["data"]["target_id"], "target-memory");
+        assert_eq!(event["data"]["connection_type"], "semantic");
     }
 
     fn seed_storage() -> (tempfile::TempDir, Arc<Storage>) {

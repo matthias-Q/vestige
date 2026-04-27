@@ -5,6 +5,60 @@ All notable changes to Vestige will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.0] - 2026-04-27 — "Cognitive Sandwich Goes Local"
+
+The Sanhedrin Executioner — Vestige's veto layer for Claude Code responses — now runs entirely on a local MLX model (`mlx-community/Qwen3.6-35B-A3B-4bit`). Zero API cost per Claude turn, fully offline, no Anthropic round-trip on the critical path. Combined with four pre-cognitive UserPromptSubmit hooks (synthesis-preflight, cwd-state-injector, vestige-pulse-daemon, preflight-swarm), Vestige now ships a complete "Cognitive Sandwich" — Vestige memories injected before the model thinks, local Sanhedrin veto after the model speaks — installable in one command on a MacBook.
+
+### Added
+
+- **`hooks/`** — first-class harness-side companion to the Vestige MCP server. 9 production hooks designed for `~/.claude/hooks/`:
+  - `sanhedrin.sh` — Stop hook that invokes the local Qwen Executioner via the Python bridge.
+  - `sanhedrin-local.py` — local backend that POSTs to `mlx_lm.server` (`localhost:8080`) with Vestige evidence injected via the dashboard `/api/deep_reference` HTTP endpoint. TRUST_FLOOR=0.55 evidence filter + topical-relevance gate + inference-verb ban + 8 worked few-shots covering true positives AND false-positive guards.
+  - `synthesis-preflight.sh` — UserPromptSubmit hook that POSTs the user prompt to `/api/deep_reference` and injects the trust-scored reasoning chain into context.
+  - `cwd-state-injector.sh` — captures git status, branch, modified files, open PRs/issues.
+  - `vestige-pulse-daemon.sh` — surfaces fresh Vestige dream insights from the past 20 min.
+  - `preflight-swarm.sh` — spawns the `lateral-thinker` subagent in fresh context for cross-disciplinary structural parallels.
+  - `synthesis-stop-validator.sh` — Stop hook regex against forbidden hedging patterns.
+  - `veto-detector.sh` — fast 50ms regex pre-screen against `veto`-tagged Vestige memories.
+  - `synthesis-gate.sh` — legacy v1 trigger (kept for backward compat).
+  - `settings.fragment.json` — JSON snippet merged into `~/.claude/settings.json` by the installer.
+- **Dashboard `/api/changelog` endpoint** — bounded REST event feed for recent `DreamCompleted` and `ConnectionDiscovered` events, used by the Pulse hook to inject fresh synthesis into Claude Code context.
+- **`agents/`** — `executioner.md` (legacy/fallback Haiku 4.5 path), `lateral-thinker.md`, `synthesis-composer.md`.
+- **`launchd/com.vestige.mlx-server.plist.template`** — auto-start `mlx_lm.server` with the Qwen3.6-35B-A3B-4bit model on login. Templated with `__HOME__` and `__MODEL__` placeholders.
+- **`scripts/install-sandwich.sh`** — one-command installer that stages hooks, agents, plist, jq-merges the settings fragment, and `launchctl load`s the plist. Backs up `settings.json` to `.bak.pre-sandwich`. Supports `--force`, `--no-launchd`, `--include-memory-loader`, `--src=PATH`.
+- **`scripts/check-sandwich-prereqs.sh`** — comprehensive prereq verifier (Apple Silicon, Python 3.10+, jq, uv, mlx-lm, hf, claude, vestige-mcp, model on disk, MCP HTTP up, server up, plist installed, settings wired).
+- **`docs/COGNITIVE_SANDWICH.md`** — architecture diagram, install guide, performance notes (82 tok/s on M3 Max), uninstall, configuration env vars.
+- **PR #48** — `VESTIGE_DATA_DIR` env-var support + tilde expansion + secure unix perms (thanks @Jelloeater) — directly addresses the ghost env-vars exposed by v2.0.9 cleanup.
+
+### Changed
+
+- **Sanhedrin Executioner default backend swapped from Anthropic Haiku 4.5 → local `mlx_lm.server` + Qwen3.6-35B-A3B-4bit.** Anthropic API key no longer required for the post-cognitive layer. The `executioner.md` agent definition is retained as manual/fallback only when invoked explicitly via `Task(subagent_type='executioner')`.
+- **All hooks sanitized for public release** — replaced hardcoded personal absolute paths with `$HOME` / `$VESTIGE_*` env vars; removed personal regex tokens.
+- **NPM binary installer now follows package version** — `vestige-mcp-server@2.1.0` downloads release assets from `v2.1.0` instead of a stale hardcoded binary tag, while local workspace installs skip the release-asset download before the tag exists.
+
+### Verified
+
+- `cargo test --workspace --release --no-fail-fast`: **1,229 passing, 0 failed** (366 vestige-core + 358 vestige-mcp lib + 4 vestige-mcp bin + 497 e2e + 4 doctests).
+- Sanhedrin bridge smoke checks: Python bytecode compilation passes, fail-open bridge invocation returns `yes`, and public hook settings validate as JSON.
+- 8-day Sandwich dogfood: **84% pass rate, 16% legitimate vetoes** caught real hallucinations.
+
+### Closes
+
+- #36 (Agent Hooks for Low-Effort Automatic Memory Capture) — Cognitive Sandwich is the answer.
+
+### Prerequisites for the Cognitive Sandwich
+
+- macOS Apple Silicon (M1+) — required for MLX
+- Python 3.10+
+- ~22 GB free RAM (Qwen3.6-35B-A3B-4bit at runtime)
+- First-run model download: ~19 GB from Hugging Face (cached locally thereafter)
+
+### Migration
+
+None required for existing Vestige users. The Cognitive Sandwich is opt-in via `scripts/install-sandwich.sh`. The MCP server, schema, and tool surface are bit-identical to v2.0.9.
+
+---
+
 ## [2.0.9] - 2026-04-24 — "Autopilot"
 
 Autopilot flips Vestige from passive memory library to self-managing cognitive surface. A single supervised backend task subscribes to the 20-event WebSocket bus and routes live events into the cognitive engine — 14 previously dormant primitives (synaptic tagging, predictive memory, activation spread, prospective polling, auto-consolidation, Rac1 cascade emission) now fire without any MCP tool call. Shipped alongside a 3,091-LOC orphan-code cleanup of the v1.0 tool surface. **No schema changes, tool surface unchanged (24 tools), fully backward compatible with v2.0.8 databases. Opt-out via `VESTIGE_AUTOPILOT_ENABLED=0`.**
