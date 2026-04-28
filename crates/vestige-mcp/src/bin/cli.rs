@@ -2,10 +2,15 @@
 //!
 //! Command-line interface for managing cognitive memory system.
 
+use std::env;
+use std::fs;
 use std::io::{BufWriter, Write};
+use std::path::Path;
 use std::path::PathBuf;
+use std::process::Command;
 use std::sync::Arc;
 
+use anyhow::Context;
 use chrono::{NaiveDate, Utc};
 use clap::{Parser, Subcommand};
 use colored::Colorize;
@@ -44,6 +49,21 @@ enum Commands {
 
     /// Run memory consolidation cycle
     Consolidate,
+
+    /// Update Vestige binaries from the latest GitHub release
+    Update {
+        /// Install a specific release tag instead of latest (example: v2.1.0)
+        #[arg(long)]
+        version: Option<String>,
+
+        /// Override install directory (defaults to the current vestige binary's directory)
+        #[arg(long)]
+        install_dir: Option<PathBuf>,
+
+        /// Print what would be updated without changing files
+        #[arg(long)]
+        dry_run: bool,
+    },
 
     /// Restore memories from backup file
     Restore {
@@ -134,6 +154,11 @@ fn main() -> anyhow::Result<()> {
         Commands::Stats { tagging, states } => run_stats(tagging, states),
         Commands::Health => run_health(),
         Commands::Consolidate => run_consolidate(),
+        Commands::Update {
+            version,
+            install_dir,
+            dry_run,
+        } => run_update(version, install_dir, dry_run),
         Commands::Restore { file } => run_restore(file),
         Commands::Backup { output } => run_backup(output),
         Commands::Export {
@@ -161,6 +186,281 @@ fn main() -> anyhow::Result<()> {
             dashboard_port,
         } => run_serve(port, dashboard, dashboard_port),
     }
+}
+
+#[derive(Debug, Clone, Copy)]
+struct ReleaseAsset {
+    target: &'static str,
+    archive_ext: &'static str,
+    binary_suffix: &'static str,
+}
+
+struct UpdateTempDir {
+    path: PathBuf,
+}
+
+impl UpdateTempDir {
+    fn create() -> anyhow::Result<Self> {
+        let path = env::temp_dir().join(format!(
+            "vestige-update-{}-{}",
+            std::process::id(),
+            Utc::now().timestamp_millis()
+        ));
+        fs::create_dir_all(&path)
+            .with_context(|| format!("failed to create temp directory {}", path.display()))?;
+        Ok(Self { path })
+    }
+}
+
+impl Drop for UpdateTempDir {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.path);
+    }
+}
+
+fn release_asset_for(os: &str, arch: &str) -> anyhow::Result<ReleaseAsset> {
+    match (os, arch) {
+        ("macos", "aarch64") => Ok(ReleaseAsset {
+            target: "aarch64-apple-darwin",
+            archive_ext: "tar.gz",
+            binary_suffix: "",
+        }),
+        ("macos", "x86_64") => Ok(ReleaseAsset {
+            target: "x86_64-apple-darwin",
+            archive_ext: "tar.gz",
+            binary_suffix: "",
+        }),
+        ("linux", "x86_64") => Ok(ReleaseAsset {
+            target: "x86_64-unknown-linux-gnu",
+            archive_ext: "tar.gz",
+            binary_suffix: "",
+        }),
+        ("windows", "x86_64") => Ok(ReleaseAsset {
+            target: "x86_64-pc-windows-msvc",
+            archive_ext: "zip",
+            binary_suffix: ".exe",
+        }),
+        _ => anyhow::bail!(
+            "unsupported platform for vestige update: {}-{}. Download manually from https://github.com/samvallad33/vestige/releases",
+            os,
+            arch
+        ),
+    }
+}
+
+fn current_release_asset() -> anyhow::Result<ReleaseAsset> {
+    release_asset_for(env::consts::OS, env::consts::ARCH)
+}
+
+fn release_download_url(asset: ReleaseAsset, version: Option<&str>) -> String {
+    let archive_name = format!("vestige-mcp-{}.{}", asset.target, asset.archive_ext);
+    match version {
+        Some(version) => {
+            let tag = if version.starts_with('v') {
+                version.to_string()
+            } else {
+                format!("v{}", version)
+            };
+            format!(
+                "https://github.com/samvallad33/vestige/releases/download/{}/{}",
+                tag, archive_name
+            )
+        }
+        None => format!(
+            "https://github.com/samvallad33/vestige/releases/latest/download/{}",
+            archive_name
+        ),
+    }
+}
+
+fn run_command(command: &mut Command, action: &str) -> anyhow::Result<()> {
+    let status = command
+        .status()
+        .with_context(|| format!("failed to start {}", action))?;
+    if !status.success() {
+        anyhow::bail!("{} failed with status {}", action, status);
+    }
+    Ok(())
+}
+
+fn extract_archive(
+    archive_path: &Path,
+    output_dir: &Path,
+    archive_ext: &str,
+) -> anyhow::Result<()> {
+    match archive_ext {
+        "tar.gz" => run_command(
+            Command::new("tar")
+                .arg("-xzf")
+                .arg(archive_path)
+                .arg("-C")
+                .arg(output_dir),
+            "extracting Vestige release archive with tar",
+        ),
+        "zip" => run_command(
+            Command::new("powershell")
+                .arg("-NoProfile")
+                .arg("-Command")
+                .arg(format!(
+                    "Expand-Archive -Path '{}' -DestinationPath '{}' -Force",
+                    archive_path.display(),
+                    output_dir.display()
+                )),
+            "extracting Vestige release archive with PowerShell",
+        ),
+        other => anyhow::bail!("unsupported release archive extension: {}", other),
+    }
+}
+
+fn replace_binary(source: &Path, destination: &Path) -> anyhow::Result<()> {
+    let file_name = destination
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| anyhow::anyhow!("invalid destination path {}", destination.display()))?;
+    let temp_destination = destination.with_file_name(format!(
+        ".{}.vestige-update-{}",
+        file_name,
+        std::process::id()
+    ));
+
+    fs::copy(source, &temp_destination).with_context(|| {
+        format!(
+            "failed to stage {} for install at {}",
+            source.display(),
+            temp_destination.display()
+        )
+    })?;
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut perms = fs::metadata(&temp_destination)?.permissions();
+        perms.set_mode(0o755);
+        fs::set_permissions(&temp_destination, perms)?;
+    }
+
+    #[cfg(windows)]
+    if destination.exists() {
+        fs::remove_file(destination).with_context(|| {
+            format!(
+                "failed to replace {}. Close running Vestige processes and retry",
+                destination.display()
+            )
+        })?;
+    }
+
+    fs::rename(&temp_destination, destination).with_context(|| {
+        let _ = fs::remove_file(&temp_destination);
+        format!(
+            "failed to install {}. If this is a system directory, retry with: sudo vestige update",
+            destination.display()
+        )
+    })?;
+
+    Ok(())
+}
+
+fn run_update(
+    version: Option<String>,
+    install_dir: Option<PathBuf>,
+    dry_run: bool,
+) -> anyhow::Result<()> {
+    println!("{}", "=== Vestige Update ===".cyan().bold());
+    println!();
+
+    let asset = current_release_asset()?;
+    let current_exe = env::current_exe().context("failed to locate current vestige executable")?;
+    let install_dir = match install_dir {
+        Some(path) => path,
+        None => current_exe
+            .parent()
+            .ok_or_else(|| anyhow::anyhow!("current executable has no parent directory"))?
+            .to_path_buf(),
+    };
+
+    let url = release_download_url(asset, version.as_deref());
+    let archive_name = format!("vestige-mcp-{}.{}", asset.target, asset.archive_ext);
+
+    println!(
+        "{}: {}",
+        "Current version".white().bold(),
+        env!("CARGO_PKG_VERSION")
+    );
+    println!(
+        "{}: {}",
+        "Release".white().bold(),
+        version.as_deref().unwrap_or("latest")
+    );
+    println!("{}: {}", "Target".white().bold(), asset.target);
+    println!(
+        "{}: {}",
+        "Install dir".white().bold(),
+        install_dir.display()
+    );
+    println!("{}: {}", "Download".white().bold(), url);
+
+    if dry_run {
+        println!();
+        println!("{}", "Dry run: no files changed.".yellow().bold());
+        return Ok(());
+    }
+
+    fs::create_dir_all(&install_dir).with_context(|| {
+        format!(
+            "failed to create install directory {}",
+            install_dir.display()
+        )
+    })?;
+
+    let temp_dir = UpdateTempDir::create()?;
+    let archive_path = temp_dir.path.join(&archive_name);
+
+    println!();
+    println!("{}", "Downloading release archive...".cyan());
+    run_command(
+        Command::new("curl")
+            .arg("-fL")
+            .arg(&url)
+            .arg("-o")
+            .arg(&archive_path),
+        "downloading Vestige release archive with curl",
+    )?;
+
+    println!("{}", "Extracting release archive...".cyan());
+    extract_archive(&archive_path, &temp_dir.path, asset.archive_ext)?;
+
+    let binaries = ["vestige", "vestige-mcp", "vestige-restore"];
+    for binary in binaries {
+        let filename = format!("{}{}", binary, asset.binary_suffix);
+        let source = temp_dir.path.join(&filename);
+        if !source.exists() {
+            anyhow::bail!("release archive is missing expected binary: {}", filename);
+        }
+
+        let destination = install_dir.join(&filename);
+        println!("  {} {}", "install".dimmed(), destination.display());
+        replace_binary(&source, &destination)?;
+    }
+
+    println!();
+    let installed_mcp = install_dir.join(format!("vestige-mcp{}", asset.binary_suffix));
+    if let Ok(output) = Command::new(&installed_mcp).arg("--version").output()
+        && output.status.success()
+    {
+        let version = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if !version.is_empty() {
+            println!("{}: {}", "Installed".white().bold(), version.green());
+        }
+    }
+
+    println!(
+        "{}",
+        "Update complete. Restart your MCP client to pick up the new binary."
+            .green()
+            .bold()
+    );
+
+    Ok(())
 }
 
 /// Run stats command
@@ -1205,5 +1505,44 @@ fn truncate(s: &str, max_chars: usize) -> String {
     } else {
         let truncated: String = s.chars().take(max_chars).collect();
         format!("{}...", truncated)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn update_asset_mapping_matches_release_names() {
+        let mac_arm = release_asset_for("macos", "aarch64").unwrap();
+        assert_eq!(mac_arm.target, "aarch64-apple-darwin");
+        assert_eq!(mac_arm.archive_ext, "tar.gz");
+        assert_eq!(mac_arm.binary_suffix, "");
+
+        let linux = release_asset_for("linux", "x86_64").unwrap();
+        assert_eq!(linux.target, "x86_64-unknown-linux-gnu");
+        assert_eq!(linux.archive_ext, "tar.gz");
+
+        let windows = release_asset_for("windows", "x86_64").unwrap();
+        assert_eq!(windows.target, "x86_64-pc-windows-msvc");
+        assert_eq!(windows.archive_ext, "zip");
+        assert_eq!(windows.binary_suffix, ".exe");
+    }
+
+    #[test]
+    fn update_url_uses_latest_or_normalized_tag() {
+        let asset = release_asset_for("macos", "aarch64").unwrap();
+        assert_eq!(
+            release_download_url(asset, None),
+            "https://github.com/samvallad33/vestige/releases/latest/download/vestige-mcp-aarch64-apple-darwin.tar.gz"
+        );
+        assert_eq!(
+            release_download_url(asset, Some("2.1.0")),
+            "https://github.com/samvallad33/vestige/releases/download/v2.1.0/vestige-mcp-aarch64-apple-darwin.tar.gz"
+        );
+        assert_eq!(
+            release_download_url(asset, Some("v2.1.0")),
+            "https://github.com/samvallad33/vestige/releases/download/v2.1.0/vestige-mcp-aarch64-apple-darwin.tar.gz"
+        );
     }
 }

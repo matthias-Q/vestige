@@ -164,16 +164,12 @@ See [Storage Modes](STORAGE.md) for more options.
 
 **Latest version:**
 ```bash
-cd vestige
-git pull
-cargo build --release
-sudo cp target/release/vestige-mcp /usr/local/bin/
+vestige update
 ```
 
 **Pin to specific version:**
 ```bash
-git checkout v1.1.2
-cargo build --release
+vestige update --version v2.1.0
 ```
 
 **Check your version:**
