@@ -133,7 +133,30 @@ claude mcp add vestige vestige-mcp -s user
 
 Full Intel Mac guide (build-from-source + troubleshooting): [`docs/INSTALL-INTEL-MAC.md`](docs/INSTALL-INTEL-MAC.md).
 
-**Windows:** Prebuilt binaries ship but `usearch 2.24.0` hit an MSVC compile break ([usearch#746](https://github.com/unum-cloud/usearch/issues/746)); we've pinned `=2.23.0` until upstream fixes it. Source builds work with:
+**Windows + Claude Desktop (recommended):**
+
+Fully quit Claude Desktop from the system tray, then install or update Vestige from PowerShell:
+
+```powershell
+npm install -g vestige-mcp-server@latest
+vestige-mcp --version
+```
+
+Open `%APPDATA%\Claude\claude_desktop_config.json` and point Claude Desktop at the installed MCP command:
+
+```json
+{
+  "mcpServers": {
+    "vestige": {
+      "command": "vestige-mcp"
+    }
+  }
+}
+```
+
+If Claude Desktop cannot find `vestige-mcp`, run `where vestige-mcp` in PowerShell and use the exact `.cmd` path it prints as `command`. Example: `"C:\\Users\\you\\AppData\\Roaming\\npm\\vestige-mcp.cmd"`. Reopen Claude Desktop after saving. Once v2.1.0 is installed, future binary updates can run with `vestige update`.
+
+**Windows source build:** Prebuilt binaries ship but `usearch 2.24.0` hit an MSVC compile break ([usearch#746](https://github.com/unum-cloud/usearch/issues/746)); we've pinned `=2.23.0` until upstream fixes it. Source builds work with:
 
 ```bash
 git clone https://github.com/samvallad33/vestige && cd vestige
