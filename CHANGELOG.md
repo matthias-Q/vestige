@@ -5,6 +5,12 @@ All notable changes to Vestige will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **Dream connection persistence cap** — dense single-domain dreams now persist every connection discovered in that run instead of losing everything beyond the old 1,000-entry live buffer. The live dreamer buffer now keeps up to 200,000 high-scoring recent connections, and the MCP `dream` tool exposes `min_similarity` for corpus-specific tuning.
+
 ## [2.1.1] - 2026-05-01 — "Portable Sync"
 
 v2.1.1 focuses on user-controlled portability: exact storage archives, merge-safe file sync, pluggable sync backends, and explicit hook opt-ins.

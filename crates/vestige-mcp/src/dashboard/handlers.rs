@@ -858,23 +858,14 @@ pub async fn trigger_dream(State(state): State<AppState>) -> Result<Json<Value>,
 
     // Run dream through CognitiveEngine
     let cog = cognitive.lock().await;
-    // Capture start time before the dream — composite-score eviction in store_connections
-    // reorders the buffer, making positional slicing (pre_dream_count..) unreliable.
-    let dream_start = Utc::now();
-    let dream_result = cog.dreamer.dream(&dream_memories).await;
+    let (dream_result, new_connections) = cog.dreamer.dream_with_connections(&dream_memories).await;
     let insights = cog.dreamer.synthesize_insights(&dream_memories);
-    let all_connections = cog.dreamer.get_connections();
     drop(cog);
 
     // Persist new connections
-    // Filter by timestamp — same approach as dream.rs to avoid positional index issues.
-    let new_connections: Vec<&vestige_core::DiscoveredConnection> = all_connections
-        .iter()
-        .filter(|c| c.discovered_at >= dream_start)
-        .collect();
     let mut connections_persisted = 0u64;
     let now = Utc::now();
-    for conn in new_connections.iter() {
+    for conn in &new_connections {
         let link_type = match conn.connection_type {
             vestige_core::DiscoveredConnectionType::Semantic => "semantic",
             vestige_core::DiscoveredConnectionType::SharedConcept => "shared_concepts",
