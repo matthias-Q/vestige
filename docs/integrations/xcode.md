@@ -13,8 +13,7 @@ Xcode 26.3 supports [agentic coding](https://developer.apple.com/documentation/x
 ### 1. Install Vestige
 
 ```bash
-curl -L https://github.com/samvallad33/vestige/releases/latest/download/vestige-mcp-aarch64-apple-darwin.tar.gz | tar -xz
-sudo mv vestige-mcp vestige vestige-restore /usr/local/bin/
+npm install -g vestige-mcp-server@latest
 ```
 
 ### 2. Add to your Xcode project
@@ -27,7 +26,7 @@ cat > /path/to/your/project/.mcp.json << 'EOF'
   "mcpServers": {
     "vestige": {
       "type": "stdio",
-      "command": "/usr/local/bin/vestige-mcp",
+      "command": "vestige-mcp",
       "args": [],
       "env": {
         "PATH": "/usr/local/bin:/usr/bin:/bin"

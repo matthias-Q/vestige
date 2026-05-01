@@ -2,8 +2,8 @@
 # install-sandwich.sh — One-command installer for the Vestige Cognitive Sandwich.
 #
 # Usage:
-#   curl -fsSL https://raw.githubusercontent.com/samvallad33/vestige/v2.1.1/scripts/install-sandwich.sh | sh
-#   # or, from a checkout:
+#   vestige sandwich install
+#   # or, from a checkout / source archive:
 #   ./scripts/install-sandwich.sh [--force] [--enable-preflight] [--enable-sanhedrin] [--with-launchd] [--include-memory-loader]
 #   ./scripts/install-sandwich.sh --enable-sanhedrin --sanhedrin-endpoint=http://127.0.0.1:11434/v1/chat/completions --sanhedrin-model=qwen2.5:14b
 #

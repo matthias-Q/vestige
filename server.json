@@ -1,0 +1,21 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.samvallad33/vestige",
+  "title": "Vestige",
+  "description": "Local-first cognitive memory for AI agents. Vestige gives Claude, Cursor, Codex, VS Code, Xcode, and other MCP clients durable memory with FSRS-6 scheduling, smart ingest, SQLite storage, portable sync, and an embedded dashboard.",
+  "repository": {
+    "url": "https://github.com/samvallad33/vestige",
+    "source": "github"
+  },
+  "version": "2.1.1",
+  "packages": [
+    {
+      "registryType": "npm",
+      "identifier": "vestige-mcp-server",
+      "version": "2.1.1",
+      "transport": {
+        "type": "stdio"
+      }
+    }
+  ]
+}

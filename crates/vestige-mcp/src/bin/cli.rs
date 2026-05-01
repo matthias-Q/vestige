@@ -12,7 +12,7 @@ use std::sync::{Arc, OnceLock};
 
 use anyhow::Context;
 use chrono::{NaiveDate, Utc};
-use clap::{Parser, Subcommand};
+use clap::{Args, Parser, Subcommand};
 use colored::Colorize;
 use vestige_core::{IngestInput, PortableImportMode, Storage};
 
@@ -35,6 +35,58 @@ struct Cli {
 }
 
 static CLI_DB_PATH: OnceLock<PathBuf> = OnceLock::new();
+
+#[derive(Debug, Clone, Default, Args)]
+struct SandwichInstallOptions {
+    /// Overwrite existing staged Vestige hook and agent files.
+    #[arg(long)]
+    force: bool,
+
+    /// Wire optional UserPromptSubmit preflight hooks.
+    #[arg(long)]
+    enable_preflight: bool,
+
+    /// Wire both optional preflight hooks and the optional Sanhedrin verifier.
+    #[arg(long)]
+    enable_sandwich: bool,
+
+    /// Wire optional Sanhedrin Stop hook.
+    #[arg(long)]
+    enable_sanhedrin: bool,
+
+    /// On Apple Silicon, auto-start the local MLX Sanhedrin backend.
+    #[arg(long)]
+    with_launchd: bool,
+
+    /// Also stage the large memory-loader hook file.
+    #[arg(long)]
+    include_memory_loader: bool,
+
+    /// OpenAI-compatible chat completions endpoint for optional Sanhedrin.
+    #[arg(long, value_name = "URL")]
+    sanhedrin_endpoint: Option<String>,
+
+    /// Model name passed to the optional Sanhedrin endpoint.
+    #[arg(long, value_name = "MODEL")]
+    sanhedrin_model: Option<String>,
+
+    /// Use a local checkout/release root containing hooks/ and agents/.
+    #[arg(long, value_name = "DIR", hide = true)]
+    src: Option<PathBuf>,
+}
+
+#[derive(Subcommand)]
+enum SandwichCommands {
+    /// Install/update Cognitive Sandwich companion files without enabling hooks by default.
+    Install {
+        /// Install files from a specific release tag instead of latest.
+        #[arg(long)]
+        version: Option<String>,
+
+        #[command(flatten)]
+        options: SandwichInstallOptions,
+    },
+}
 
 #[derive(Subcommand)]
 enum Commands {
@@ -68,6 +120,19 @@ enum Commands {
         /// Print what would be updated without changing files
         #[arg(long)]
         dry_run: bool,
+
+        /// Skip Cognitive Sandwich companion file update and legacy hook cleanup.
+        #[arg(long)]
+        no_sandwich: bool,
+
+        #[command(flatten)]
+        sandwich: SandwichInstallOptions,
+    },
+
+    /// Manage optional Claude Code Cognitive Sandwich companion files.
+    Sandwich {
+        #[command(subcommand)]
+        command: SandwichCommands,
     },
 
     /// Restore memories from backup file
@@ -191,7 +256,14 @@ fn main() -> anyhow::Result<()> {
             version,
             install_dir,
             dry_run,
-        } => run_update(version, install_dir, dry_run),
+            no_sandwich,
+            sandwich,
+        } => run_update(version, install_dir, dry_run, no_sandwich, sandwich),
+        Commands::Sandwich { command } => match command {
+            SandwichCommands::Install { version, options } => {
+                run_sandwich_install(version.as_deref(), &options)
+            }
+        },
         Commands::Restore { file } => run_restore(file),
         Commands::Backup { output } => run_backup(output),
         Commands::Export {
@@ -292,11 +364,7 @@ fn release_download_url(asset: ReleaseAsset, version: Option<&str>) -> String {
     let archive_name = format!("vestige-mcp-{}.{}", asset.target, asset.archive_ext);
     match version {
         Some(version) => {
-            let tag = if version.starts_with('v') {
-                version.to_string()
-            } else {
-                format!("v{}", version)
-            };
+            let tag = normalize_release_tag(version);
             format!(
                 "https://github.com/samvallad33/vestige/releases/download/{}/{}",
                 tag, archive_name
@@ -307,6 +375,506 @@ fn release_download_url(asset: ReleaseAsset, version: Option<&str>) -> String {
             archive_name
         ),
     }
+}
+
+fn normalize_release_tag(version: &str) -> String {
+    if version.starts_with('v') {
+        version.to_string()
+    } else {
+        format!("v{}", version)
+    }
+}
+
+fn source_archive_url(tag: &str) -> String {
+    format!(
+        "https://github.com/samvallad33/vestige/archive/refs/tags/{}.tar.gz",
+        tag
+    )
+}
+
+fn download_file(url: &str, output: &Path, action: &str) -> anyhow::Result<()> {
+    run_command(
+        Command::new("curl")
+            .arg("-fsSL")
+            .arg("-A")
+            .arg("vestige-cli")
+            .arg(url)
+            .arg("-o")
+            .arg(output),
+        action,
+    )
+}
+
+fn latest_release_tag() -> anyhow::Result<String> {
+    let temp_dir = UpdateTempDir::create()?;
+    let metadata_path = temp_dir.path.join("latest-release.json");
+    download_file(
+        "https://api.github.com/repos/samvallad33/vestige/releases/latest",
+        &metadata_path,
+        "checking latest Vestige release",
+    )?;
+    let file = fs::File::open(&metadata_path)?;
+    let metadata: serde_json::Value =
+        serde_json::from_reader(file).context("failed to parse latest Vestige release metadata")?;
+    metadata
+        .get("tag_name")
+        .and_then(|tag| tag.as_str())
+        .map(|tag| tag.to_string())
+        .ok_or_else(|| anyhow::anyhow!("latest Vestige release metadata did not include tag_name"))
+}
+
+fn release_tag_for_source(version: Option<&str>) -> anyhow::Result<String> {
+    match version {
+        Some(version) => Ok(normalize_release_tag(version)),
+        None => latest_release_tag(),
+    }
+}
+
+fn find_sandwich_source_root(root: &Path) -> Option<PathBuf> {
+    if root.join("hooks").is_dir() && root.join("agents").is_dir() {
+        return Some(root.to_path_buf());
+    }
+
+    let entries = fs::read_dir(root).ok()?;
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() && path.join("hooks").is_dir() && path.join("agents").is_dir() {
+            return Some(path);
+        }
+    }
+
+    None
+}
+
+fn download_sandwich_source(version: Option<&str>, output_dir: &Path) -> anyhow::Result<PathBuf> {
+    let tag = release_tag_for_source(version)?;
+    let archive_path = output_dir.join(format!("vestige-source-{}.tar.gz", tag));
+    let url = source_archive_url(&tag);
+
+    println!("{}: {}", "Sandwich source".white().bold(), tag);
+    download_file(&url, &archive_path, "downloading Vestige source archive")?;
+    extract_archive(&archive_path, output_dir, "tar.gz")?;
+    find_sandwich_source_root(output_dir).ok_or_else(|| {
+        anyhow::anyhow!("Vestige source archive did not contain hooks/ and agents/ directories")
+    })
+}
+
+fn home_dir() -> anyhow::Result<PathBuf> {
+    directories::BaseDirs::new()
+        .map(|dirs| dirs.home_dir().to_path_buf())
+        .ok_or_else(|| anyhow::anyhow!("failed to locate home directory"))
+}
+
+fn is_vestige_hook_command(command: &str) -> bool {
+    const NEEDLES: &[&str] = &[
+        "synthesis-preflight.sh",
+        "cwd-state-injector.sh",
+        "vestige-pulse-daemon.sh",
+        "preflight-swarm.sh",
+        "load-all-memory.sh",
+        "veto-detector.sh",
+        "sanhedrin.sh",
+        "synthesis-stop-validator.sh",
+        "synthesis-gate.sh",
+    ];
+    NEEDLES.iter().any(|needle| command.contains(needle))
+}
+
+fn scrub_vestige_hooks(settings: &mut serde_json::Value) {
+    let Some(hooks) = settings
+        .get_mut("hooks")
+        .and_then(|hooks| hooks.as_object_mut())
+    else {
+        return;
+    };
+
+    for event_name in ["UserPromptSubmit", "Stop"] {
+        let Some(groups) = hooks
+            .get_mut(event_name)
+            .and_then(|groups| groups.as_array_mut())
+        else {
+            continue;
+        };
+
+        for group in groups.iter_mut() {
+            if let Some(commands) = group
+                .get_mut("hooks")
+                .and_then(|hooks| hooks.as_array_mut())
+            {
+                commands.retain(|hook| {
+                    !hook
+                        .get("command")
+                        .and_then(|command| command.as_str())
+                        .is_some_and(is_vestige_hook_command)
+                });
+            }
+        }
+
+        groups.retain(|group| {
+            group
+                .get("hooks")
+                .and_then(|hooks| hooks.as_array())
+                .is_some_and(|hooks| !hooks.is_empty())
+        });
+    }
+
+    hooks.retain(|_, value| match value {
+        serde_json::Value::Array(items) => !items.is_empty(),
+        serde_json::Value::Object(items) => !items.is_empty(),
+        serde_json::Value::Null => false,
+        _ => true,
+    });
+
+    if hooks.is_empty()
+        && let Some(root) = settings.as_object_mut()
+    {
+        root.remove("hooks");
+    }
+}
+
+fn merge_json(base: &mut serde_json::Value, overlay: serde_json::Value) {
+    match (base, overlay) {
+        (serde_json::Value::Object(base), serde_json::Value::Object(overlay)) => {
+            for (key, value) in overlay {
+                match base.get_mut(&key) {
+                    Some(existing) => merge_json(existing, value),
+                    None => {
+                        base.insert(key, value);
+                    }
+                }
+            }
+        }
+        (base, overlay) => *base = overlay,
+    }
+}
+
+fn merge_settings_fragment(
+    settings: &mut serde_json::Value,
+    fragment_path: &Path,
+) -> anyhow::Result<()> {
+    let file = fs::File::open(fragment_path)
+        .with_context(|| format!("failed to open {}", fragment_path.display()))?;
+    let fragment: serde_json::Value = serde_json::from_reader(file)
+        .with_context(|| format!("failed to parse {}", fragment_path.display()))?;
+    merge_json(settings, fragment);
+    Ok(())
+}
+
+fn copy_companion_files(
+    source_dir: &Path,
+    destination_dir: &Path,
+    allowed_extensions: &[&str],
+    _mode: u32,
+    options: &SandwichInstallOptions,
+) -> anyhow::Result<(usize, usize)> {
+    fs::create_dir_all(destination_dir)?;
+    let mut copied = 0;
+    let mut skipped = 0;
+
+    for entry in fs::read_dir(source_dir)
+        .with_context(|| format!("failed to read {}", source_dir.display()))?
+    {
+        let entry = entry?;
+        let source = entry.path();
+        if !source.is_file() {
+            continue;
+        }
+
+        let extension = source
+            .extension()
+            .and_then(|ext| ext.to_str())
+            .unwrap_or("");
+        if !allowed_extensions.contains(&extension) {
+            continue;
+        }
+
+        let Some(file_name) = source.file_name() else {
+            continue;
+        };
+        if file_name.to_string_lossy() == "load-all-memory.sh" && !options.include_memory_loader {
+            continue;
+        }
+
+        let destination = destination_dir.join(file_name);
+        if destination.exists() && !options.force {
+            skipped += 1;
+            continue;
+        }
+
+        fs::copy(&source, &destination).with_context(|| {
+            format!(
+                "failed to copy {} to {}",
+                source.display(),
+                destination.display()
+            )
+        })?;
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mut perms = fs::metadata(&destination)?.permissions();
+            perms.set_mode(_mode);
+            fs::set_permissions(&destination, perms)?;
+        }
+
+        copied += 1;
+    }
+
+    Ok((copied, skipped))
+}
+
+fn quote_shell_env(value: &str) -> String {
+    format!("'{}'", value.replace('\'', "'\\''"))
+}
+
+fn write_sanhedrin_env(
+    hooks_dir: &Path,
+    endpoint: &str,
+    model: &str,
+    dashboard_port: &str,
+) -> anyhow::Result<()> {
+    let env_path = hooks_dir.join("vestige-sanhedrin.env");
+    let contents = format!(
+        "VESTIGE_SANHEDRIN_ENABLED=1\nVESTIGE_SANHEDRIN_ENDPOINT={}\nVESTIGE_SANHEDRIN_MODEL={}\nVESTIGE_DASHBOARD_PORT={}\n",
+        quote_shell_env(endpoint),
+        quote_shell_env(model),
+        quote_shell_env(dashboard_port)
+    );
+    fs::write(&env_path, contents)?;
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut perms = fs::metadata(&env_path)?.permissions();
+        perms.set_mode(0o600);
+        fs::set_permissions(&env_path, perms)?;
+    }
+
+    println!("{}: {}", "Sanhedrin env".white().bold(), env_path.display());
+    Ok(())
+}
+
+fn install_launchd_job(source_root: &Path, home: &Path, model: &str) -> anyhow::Result<()> {
+    let launchd_dir = home.join("Library").join("LaunchAgents");
+    fs::create_dir_all(&launchd_dir)?;
+
+    let template_path = source_root
+        .join("launchd")
+        .join("com.vestige.mlx-server.plist.template");
+    let template = fs::read_to_string(&template_path)
+        .with_context(|| format!("failed to read {}", template_path.display()))?;
+    let rendered = template
+        .replace("__HOME__", &home.display().to_string())
+        .replace("__MODEL__", model);
+
+    let plist = launchd_dir.join("com.vestige.mlx-server.plist");
+    fs::write(&plist, rendered)?;
+    let _ = Command::new("launchctl").arg("unload").arg(&plist).status();
+    run_command(
+        Command::new("launchctl").arg("load").arg(&plist),
+        "loading Vestige MLX launchd job",
+    )?;
+    println!("{}: {}", "launchd".white().bold(), plist.display());
+    Ok(())
+}
+
+fn remove_legacy_launchd_job(home: &Path) {
+    if env::consts::OS != "macos" {
+        return;
+    }
+
+    let plist = home
+        .join("Library")
+        .join("LaunchAgents")
+        .join("com.vestige.mlx-server.plist");
+    if plist.exists() {
+        let _ = Command::new("launchctl").arg("unload").arg(&plist).status();
+        if fs::remove_file(&plist).is_ok() {
+            println!(
+                "{}: removed old Sanhedrin launchd job",
+                "launchd".white().bold()
+            );
+        }
+    }
+}
+
+fn install_sandwich_from_source(
+    source_root: &Path,
+    options: &SandwichInstallOptions,
+) -> anyhow::Result<()> {
+    let home = home_dir()?;
+    let claude_dir = home.join(".claude");
+    let hooks_dir = claude_dir.join("hooks");
+    let agents_dir = claude_dir.join("agents");
+    let settings_path = claude_dir.join("settings.json");
+    let source_root =
+        find_sandwich_source_root(source_root).unwrap_or_else(|| source_root.to_path_buf());
+
+    if !source_root.join("hooks").is_dir() || !source_root.join("agents").is_dir() {
+        anyhow::bail!(
+            "Cognitive Sandwich source missing hooks/ or agents/: {}",
+            source_root.display()
+        );
+    }
+
+    let enable_preflight = options.enable_preflight || options.enable_sandwich;
+    let mut enable_sanhedrin =
+        options.enable_sanhedrin || options.enable_sandwich || options.with_launchd;
+    let mut with_launchd = options.with_launchd;
+
+    if with_launchd && (env::consts::OS != "macos" || env::consts::ARCH != "aarch64") {
+        println!(
+            "{}",
+            "--with-launchd is Apple Silicon only; using endpoint-backed Sanhedrin instead."
+                .yellow()
+        );
+        with_launchd = false;
+        enable_sanhedrin = true;
+    }
+
+    fs::create_dir_all(&claude_dir)?;
+    let (hooks_copied, hooks_skipped) = copy_companion_files(
+        &source_root.join("hooks"),
+        &hooks_dir,
+        &["sh", "py"],
+        0o755,
+        options,
+    )?;
+    let (agents_copied, agents_skipped) = copy_companion_files(
+        &source_root.join("agents"),
+        &agents_dir,
+        &["md"],
+        0o644,
+        options,
+    )?;
+
+    println!(
+        "{}: {} installed, {} skipped",
+        "Hooks".white().bold(),
+        hooks_copied,
+        hooks_skipped
+    );
+    println!(
+        "{}: {} installed, {} skipped",
+        "Agents".white().bold(),
+        agents_copied,
+        agents_skipped
+    );
+
+    if !with_launchd {
+        remove_legacy_launchd_job(&home);
+    }
+
+    let dashboard_port = env::var("VESTIGE_DASHBOARD_PORT").unwrap_or_else(|_| "3927".to_string());
+    let endpoint = options
+        .sanhedrin_endpoint
+        .clone()
+        .or_else(|| env::var("VESTIGE_SANHEDRIN_ENDPOINT").ok())
+        .or_else(|| env::var("MLX_ENDPOINT").ok())
+        .unwrap_or_else(|| "http://127.0.0.1:8080/v1/chat/completions".to_string())
+        .trim_end_matches('/')
+        .to_string();
+    let model = options
+        .sanhedrin_model
+        .clone()
+        .or_else(|| env::var("VESTIGE_SANHEDRIN_MODEL").ok())
+        .or_else(|| env::var("VESTIGE_SANDWICH_MODEL").ok())
+        .unwrap_or_else(|| "mlx-community/Qwen3.6-35B-A3B-4bit".to_string());
+
+    if enable_sanhedrin {
+        write_sanhedrin_env(&hooks_dir, &endpoint, &model, &dashboard_port)?;
+    }
+    if with_launchd {
+        install_launchd_job(&source_root, &home, &model)?;
+    }
+
+    if !settings_path.exists() {
+        fs::write(&settings_path, "{}\n")?;
+    }
+    let backup_path = claude_dir.join("settings.json.bak.pre-sandwich");
+    if !backup_path.exists() {
+        fs::copy(&settings_path, &backup_path)?;
+    }
+
+    let settings_file = fs::File::open(&settings_path)?;
+    let mut settings: serde_json::Value =
+        serde_json::from_reader(settings_file).unwrap_or_else(|_| serde_json::json!({}));
+    scrub_vestige_hooks(&mut settings);
+
+    if enable_preflight {
+        merge_settings_fragment(
+            &mut settings,
+            &source_root
+                .join("hooks")
+                .join("settings.preflight.fragment.json"),
+        )?;
+    }
+    if enable_sanhedrin {
+        merge_settings_fragment(
+            &mut settings,
+            &source_root
+                .join("hooks")
+                .join("settings.sanhedrin.fragment.json"),
+        )?;
+    }
+
+    let mut settings_file = fs::File::create(&settings_path)?;
+    serde_json::to_writer_pretty(&mut settings_file, &settings)?;
+    writeln!(settings_file)?;
+
+    if enable_preflight || enable_sanhedrin {
+        let mut layers = Vec::new();
+        if enable_preflight {
+            layers.push("preflight");
+        }
+        if enable_sanhedrin {
+            layers.push("sanhedrin");
+        }
+        println!(
+            "{}: enabled optional layer(s): {}",
+            "Settings".white().bold(),
+            layers.join(", ")
+        );
+    } else {
+        println!(
+            "{}: no Vestige Claude Code hooks enabled by default",
+            "Settings".white().bold()
+        );
+    }
+
+    Ok(())
+}
+
+fn run_sandwich_install(
+    version: Option<&str>,
+    options: &SandwichInstallOptions,
+) -> anyhow::Result<()> {
+    println!(
+        "{}",
+        "=== Vestige Cognitive Sandwich Install ===".cyan().bold()
+    );
+    println!();
+
+    if let Some(source_root) = &options.src {
+        install_sandwich_from_source(source_root, options)?;
+    } else {
+        let temp_dir = UpdateTempDir::create()?;
+        let source_root = download_sandwich_source(version, &temp_dir.path)?;
+        install_sandwich_from_source(&source_root, options)?;
+    }
+
+    println!();
+    let optional_layers_enabled = options.enable_preflight
+        || options.enable_sandwich
+        || options.enable_sanhedrin
+        || options.with_launchd;
+    let message = if optional_layers_enabled {
+        "Cognitive Sandwich files updated. Restart Claude Code to use enabled optional hooks."
+    } else {
+        "Cognitive Sandwich files updated. No hooks enabled; no automatic model calls."
+    };
+    println!("{}", message.green().bold());
+    Ok(())
 }
 
 fn run_command(command: &mut Command, action: &str) -> anyhow::Result<()> {
@@ -400,6 +968,8 @@ fn run_update(
     version: Option<String>,
     install_dir: Option<PathBuf>,
     dry_run: bool,
+    no_sandwich: bool,
+    sandwich: SandwichInstallOptions,
 ) -> anyhow::Result<()> {
     println!("{}", "=== Vestige Update ===".cyan().bold());
     println!();
@@ -453,14 +1023,7 @@ fn run_update(
 
     println!();
     println!("{}", "Downloading release archive...".cyan());
-    run_command(
-        Command::new("curl")
-            .arg("-fL")
-            .arg(&url)
-            .arg("-o")
-            .arg(&archive_path),
-        "downloading Vestige release archive with curl",
-    )?;
+    download_file(&url, &archive_path, "downloading Vestige release archive")?;
 
     println!("{}", "Extracting release archive...".cyan());
     extract_archive(&archive_path, &temp_dir.path, asset.archive_ext)?;
@@ -491,10 +1054,24 @@ fn run_update(
 
     println!(
         "{}",
-        "Update complete. Restart your MCP client to pick up the new binary."
+        "Binary update complete. Restart your MCP client to pick up the new binary."
             .green()
             .bold()
     );
+
+    if no_sandwich {
+        println!(
+            "{}",
+            "Skipped Cognitive Sandwich companion update (--no-sandwich).".yellow()
+        );
+    } else {
+        println!();
+        println!(
+            "{}",
+            "Updating Cognitive Sandwich companion files...".cyan()
+        );
+        run_sandwich_install(version.as_deref(), &sandwich)?;
+    }
 
     Ok(())
 }
@@ -1799,5 +2376,49 @@ mod tests {
             release_download_url(asset, Some("v2.1.0")),
             "https://github.com/samvallad33/vestige/releases/download/v2.1.0/vestige-mcp-aarch64-apple-darwin.tar.gz"
         );
+    }
+
+    #[test]
+    fn source_archive_url_uses_normalized_tag() {
+        assert_eq!(normalize_release_tag("2.1.1"), "v2.1.1");
+        assert_eq!(normalize_release_tag("v2.1.1"), "v2.1.1");
+        assert_eq!(
+            source_archive_url("v2.1.1"),
+            "https://github.com/samvallad33/vestige/archive/refs/tags/v2.1.1.tar.gz"
+        );
+    }
+
+    #[test]
+    fn scrub_vestige_hooks_removes_only_vestige_commands() {
+        let mut settings = serde_json::json!({
+            "hooks": {
+                "UserPromptSubmit": [
+                    {
+                        "hooks": [
+                            { "type": "command", "command": "/tmp/synthesis-preflight.sh" },
+                            { "type": "command", "command": "/tmp/custom-user-hook.sh" }
+                        ]
+                    }
+                ],
+                "Stop": [
+                    {
+                        "hooks": [
+                            { "type": "command", "command": "/tmp/sanhedrin.sh" }
+                        ]
+                    }
+                ]
+            },
+            "other": true
+        });
+
+        scrub_vestige_hooks(&mut settings);
+
+        let user_hooks = settings["hooks"]["UserPromptSubmit"][0]["hooks"]
+            .as_array()
+            .unwrap();
+        assert_eq!(user_hooks.len(), 1);
+        assert_eq!(user_hooks[0]["command"], "/tmp/custom-user-hook.sh");
+        assert!(settings["hooks"].get("Stop").is_none());
+        assert_eq!(settings["other"], true);
     }
 }

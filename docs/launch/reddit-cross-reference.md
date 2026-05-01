@@ -88,7 +88,7 @@ Memory systems need to be SMARTER, not just bigger. That's what Vestige does —
 ### Install (30 seconds):
 ```bash
 # macOS Apple Silicon
-curl -L https://github.com/samvallad33/vestige/releases/latest/download/vestige-mcp-aarch64-apple-darwin.tar.gz | tar -xz
+npm install -g vestige-mcp-server
 sudo mv vestige-mcp /usr/local/bin/
 claude mcp add vestige vestige-mcp -s user
 ```
@@ -162,7 +162,7 @@ The AI sees the conflict. Picks the right one. Every time.
 **100% local. Your data never leaves your machine.**
 
 ```bash
-curl -L https://github.com/samvallad33/vestige/releases/latest/download/vestige-mcp-aarch64-apple-darwin.tar.gz | tar -xz
+npm install -g vestige-mcp-server
 sudo mv vestige-mcp /usr/local/bin/
 claude mcp add vestige vestige-mcp -s user
 ```

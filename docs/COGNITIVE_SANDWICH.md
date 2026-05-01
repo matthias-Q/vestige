@@ -69,11 +69,16 @@ False-positive guards (added v2.1.0 after dogfood):
 
 ## Installation
 
-### One-liner
+### From an installed Vestige CLI
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/samvallad33/vestige/v2.1.1/scripts/install-sandwich.sh | sh
+vestige sandwich install
 ```
+
+`vestige update` also refreshes these companion files by default after it updates
+the binaries. The default command does not activate any Claude Code hook. It
+removes old v2.1.0 Vestige hook wiring from `~/.claude/settings.json` while
+preserving unrelated user hooks.
 
 ### From a checkout
 
@@ -84,15 +89,13 @@ cd vestige
 ./scripts/check-sandwich-prereqs.sh     # verify no Vestige hooks are wired by default
 ```
 
-The default command does not activate any Claude Code hook. It removes old v2.1.0 Vestige hook wiring from `~/.claude/settings.json` while preserving unrelated user hooks.
-
 ### Optional Preflight
 
 Preflight is a separate opt-in layer. It includes `preflight-swarm.sh`, which uses `claude -p --model claude-haiku-4-5-20251001`; it is not wired by default.
 
 ```bash
-./scripts/install-sandwich.sh --enable-preflight
-./scripts/check-sandwich-prereqs.sh --preflight
+vestige sandwich install --enable-preflight
+scripts/check-sandwich-prereqs.sh --preflight
 ```
 
 ### Optional Sanhedrin
@@ -101,13 +104,13 @@ Sanhedrin is a separate opt-in layer.
 
 ```bash
 # Wire the Sanhedrin Stop hook, using the default OpenAI-compatible endpoint.
-./scripts/install-sandwich.sh --enable-sanhedrin
+vestige sandwich install --enable-sanhedrin
 
 # Apple Silicon only, and only if the machine has enough memory:
-./scripts/install-sandwich.sh --enable-sanhedrin --with-launchd
+vestige sandwich install --enable-sanhedrin --with-launchd
 
 # x86 / Linux / Intel Mac: use any OpenAI-compatible endpoint.
-./scripts/install-sandwich.sh \
+vestige sandwich install \
   --enable-sanhedrin \
   --sanhedrin-endpoint=http://127.0.0.1:11434/v1/chat/completions \
   --sanhedrin-model=qwen2.5:14b

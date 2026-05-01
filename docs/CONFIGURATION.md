@@ -175,9 +175,25 @@ See [Storage Modes](STORAGE.md) for more options.
 vestige update
 ```
 
+This updates `vestige`, `vestige-mcp`, `vestige-restore`, and the Cognitive
+Sandwich companion files. The companion refresh keeps hooks disabled by default
+and cleans up old mandatory v2.1.0 hook wiring.
+
+**Binaries only:**
+```bash
+vestige update --no-sandwich
+```
+
 **Pin to specific version:**
 ```bash
 vestige update --version v2.1.1
+```
+
+**Manage the optional Cognitive Sandwich layer without updating binaries:**
+```bash
+vestige sandwich install
+vestige sandwich install --enable-preflight
+vestige sandwich install --enable-sanhedrin --sanhedrin-endpoint=http://127.0.0.1:11434/v1/chat/completions
 ```
 
 **Check your version:**

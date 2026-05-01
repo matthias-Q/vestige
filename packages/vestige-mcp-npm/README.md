@@ -12,6 +12,15 @@ npm install -g vestige-mcp-server
 
 This automatically downloads the correct binary for your platform (macOS, Linux, Windows) from GitHub releases.
 
+Already installed? Update without copying release URLs:
+
+```bash
+vestige update
+```
+
+This refreshes the binaries and Cognitive Sandwich companion files while keeping
+all hooks disabled by default.
+
 ### What gets installed
 
 | Command | Description |
@@ -57,6 +66,8 @@ vestige stats          # Memory statistics
 vestige stats --states # Cognitive state distribution
 vestige health         # System health check
 vestige consolidate    # Run memory maintenance cycle
+vestige update         # Update binaries + companion files
+vestige sandwich install # Refresh optional Claude Code hook files
 ```
 
 ## Features

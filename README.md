@@ -34,7 +34,7 @@ v2.1.1 focuses on the biggest post-launch ask: move memories between machines wi
 v2.1.0 adds an opt-in Claude Code hook harness around the existing Vestige MCP server. The MCP tool surface and database schema stay backward compatible, while preflight hooks can inject trusted memory context before Claude answers. The heavyweight Sanhedrin verifier is optional and can be enabled separately.
 
 - **Optional Sanhedrin Executioner.** The post-response verifier is off by default. Users can enable it with an OpenAI-compatible endpoint on x86/Linux/Intel Mac, or add `--with-launchd` on Apple Silicon to run the local MLX Qwen backend.
-- **One-command Cognitive Sandwich installer.** `scripts/install-sandwich.sh` stages hook files and agents by default, removes old Vestige hook wiring, and leaves all Claude Code hook layers plus the 19 GB model path opt-in.
+- **One-command Cognitive Sandwich installer.** `vestige sandwich install` stages hook files and agents by default, removes old Vestige hook wiring, and leaves all Claude Code hook layers plus the 19 GB model path opt-in.
 - **Pulse hook backed by `/api/changelog`.** Fresh dream and connection events can be injected into the next Claude Code prompt context without blocking the prompt.
 - **`VESTIGE_DATA_DIR` support.** `--data-dir` now has an env-var fallback, tilde expansion, secure directory creation, and clear precedence docs.
 - **NPM release wrapper fixed.** `vestige-mcp-server@2.1.0` now downloads binaries from the matching `v2.1.0` GitHub release tag instead of an old hardcoded release.
@@ -103,15 +103,14 @@ Based on [Anderson et al. 2025](https://www.nature.com/articles/s41583-025-00929
 ## Quick Start
 
 ```bash
-# 1. Install (macOS Apple Silicon)
-curl -L https://github.com/samvallad33/vestige/releases/latest/download/vestige-mcp-aarch64-apple-darwin.tar.gz | tar -xz
-sudo mv vestige-mcp vestige vestige-restore /usr/local/bin/
+# 1. Install
+npm install -g vestige-mcp-server@latest
 
 # 2. Connect to Claude Code
 claude mcp add vestige vestige-mcp -s user
 
 # Or connect to Codex
-codex mcp add vestige -- /usr/local/bin/vestige-mcp
+codex mcp add vestige -- vestige-mcp
 
 # 3. Test it
 # "Remember that I prefer TypeScript over JavaScript"
@@ -123,18 +122,25 @@ codex mcp add vestige -- /usr/local/bin/vestige-mcp
 <details>
 <summary>Other platforms & install methods</summary>
 
-**Linux (x86_64):**
+**Updating an existing install:**
 ```bash
-curl -L https://github.com/samvallad33/vestige/releases/latest/download/vestige-mcp-x86_64-unknown-linux-gnu.tar.gz | tar -xz
-sudo mv vestige-mcp vestige vestige-restore /usr/local/bin/
+vestige update
+```
+
+`vestige update` updates the binaries and refreshes Cognitive Sandwich companion
+files while keeping every hook layer disabled by default. Use
+`vestige update --no-sandwich` if you only want the binaries.
+
+**macOS/Linux manual binary install:**
+```bash
+vestige update --install-dir /usr/local/bin
 ```
 
 **macOS (Intel):** Microsoft is discontinuing x86_64 macOS prebuilts after ONNX Runtime v1.23.0, so Vestige's Intel Mac build links dynamically against a Homebrew-installed ONNX Runtime via the `ort-dynamic` feature. Install with:
 
 ```bash
 brew install onnxruntime
-curl -L https://github.com/samvallad33/vestige/releases/latest/download/vestige-mcp-x86_64-apple-darwin.tar.gz | tar -xz
-sudo mv vestige-mcp vestige vestige-restore /usr/local/bin/
+npm install -g vestige-mcp-server@latest
 echo 'export ORT_DYLIB_PATH="'"$(brew --prefix onnxruntime)"'/lib/libonnxruntime.dylib"' >> ~/.zshrc
 source ~/.zshrc
 claude mcp add vestige vestige-mcp -s user
@@ -163,7 +169,7 @@ Open `%APPDATA%\Claude\claude_desktop_config.json` and point Claude Desktop at t
 }
 ```
 
-If Claude Desktop cannot find `vestige-mcp`, run `where vestige-mcp` in PowerShell and use the exact `.cmd` path it prints as `command`. Example: `"C:\\Users\\you\\AppData\\Roaming\\npm\\vestige-mcp.cmd"`. Reopen Claude Desktop after saving. Once v2.1.0 is installed, future binary updates can run with `vestige update`.
+If Claude Desktop cannot find `vestige-mcp`, run `where vestige-mcp` in PowerShell and use the exact `.cmd` path it prints as `command`. Example: `"C:\\Users\\you\\AppData\\Roaming\\npm\\vestige-mcp.cmd"`. Reopen Claude Desktop after saving. Future binary and companion-file updates can run with `vestige update`.
 
 **Windows source build:** Prebuilt binaries ship but `usearch 2.24.0` hit an MSVC compile break ([usearch#746](https://github.com/unum-cloud/usearch/issues/746)); we've pinned `=2.23.0` until upstream fixes it. Source builds work with:
 

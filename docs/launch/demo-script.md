@@ -194,10 +194,10 @@ wc -l $(find /path/to/vestige/crates -name "*.rs") | tail -1
 # → 77,840 total
 ```
 
-> Seventy-eight thousand lines of Rust. Seven hundred thirty-four tests. Twenty-two megabyte binary. Ships with the dashboard embedded. Install is one curl command:
+> Seventy-eight thousand lines of Rust. Seven hundred thirty-four tests. Twenty-two megabyte binary. Ships with the dashboard embedded. Install is one npm command:
 
 ```bash
-curl -L https://github.com/samvallad33/vestige/releases/latest/download/vestige-mcp-aarch64-apple-darwin.tar.gz | tar -xz
+npm install -g vestige-mcp-server
 claude mcp add vestige vestige-mcp -s user
 ```
 
@@ -241,8 +241,7 @@ claude mcp add vestige vestige-mcp -s user
 
 ```bash
 # Install (macOS Apple Silicon)
-curl -L https://github.com/samvallad33/vestige/releases/latest/download/vestige-mcp-aarch64-apple-darwin.tar.gz | tar -xz
-sudo mv vestige-mcp vestige vestige-restore /usr/local/bin/
+npm install -g vestige-mcp-server
 ```
 
 > Three binaries. The MCP server, the CLI admin tool, and a restore utility. Twenty-two megabytes total. No Docker. No Python. No node_modules. No cloud API key.
@@ -389,7 +388,7 @@ vestige-mcp --version
 # <300ns cosine similarity (benchmarked with Criterion)
 # Zero cloud dependencies
 # Zero API keys required
-# One curl command to install
+# One command to install
 ```
 
 > This is what I've been building for the past three months. I'm one person, I'm twenty-one years old, and I believe this is how AI memory should work — grounded in real science, running locally, open source.
@@ -479,7 +478,7 @@ vestige-mcp --version
 - **Start from the dashboard.** The 3D graph is the hook. It's visual, it's unusual, it makes people lean in.
 - **Don't rush the dream sequence.** The purple wash and sequential node pulses are the most visually impressive moment. Let it breathe for 3-4 seconds.
 - **Say the scientists' names.** "Ebbinghaus," "Bjork," "Frey and Morris" — this signals that you've done the reading. The MCP Dev Summit audience respects depth.
-- **Make eye contact during the punchline.** "One curl command. Your AI now has a brain." Look at the audience, not the screen.
+- **Make eye contact during the punchline.** "One command. Your AI now has a brain." Look at the audience, not the screen.
 - **Own your age.** Twenty-one, solo developer, zero funding. This is an asset, not a liability. You built something that the well-funded competitors haven't.
 - **The dashboard is your co-presenter.** Every time Claude does something, the dashboard should be showing the corresponding event. Practice the terminal-to-browser switch until it's seamless.
 - **Don't apologize.** Not for bugs, not for the AGPL, not for being solo. Confident but not arrogant. The work speaks.

@@ -280,12 +280,7 @@ function main() {
     console.log('');
     console.log('Install manually:');
     console.log('');
-    console.log('  # macOS (Apple Silicon)');
-    console.log('  curl -L https://github.com/samvallad33/vestige/releases/latest/download/vestige-mcp-aarch64-apple-darwin.tar.gz | tar -xz');
-    console.log('  sudo mv vestige-mcp vestige vestige-restore /usr/local/bin/');
-    console.log('');
-    console.log('  # Or via npm');
-    console.log('  npm install -g vestige-mcp-server');
+    console.log('  npm install -g vestige-mcp-server@latest');
     console.log('');
     console.log('Then run: npx @vestige/init');
     process.exit(1);
