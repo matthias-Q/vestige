@@ -223,7 +223,7 @@ pub async fn execute(
         Some(dt) => storage.count_memories_since(*dt).unwrap_or(0),
         None => stats.total_nodes,
     };
-    let last_backup = Storage::get_last_backup_timestamp();
+    let last_backup = storage.last_backup_timestamp();
     let now = Utc::now();
 
     let needs_dream = last_dream
@@ -236,7 +236,7 @@ pub async fn execute(
 
     if include_status {
         let embedding_pct = if stats.total_nodes > 0 {
-            (stats.nodes_with_embeddings as f64 / stats.total_nodes as f64) * 100.0
+            (stats.nodes_with_active_embeddings as f64 / stats.total_nodes as f64) * 100.0
         } else {
             0.0
         };

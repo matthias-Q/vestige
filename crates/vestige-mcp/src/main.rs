@@ -467,7 +467,7 @@ async fn main() {
     }
 
     // Load cross-encoder reranker in the background (downloads ~150MB on first run)
-    #[cfg(feature = "embeddings")]
+    #[cfg(feature = "vector-search")]
     {
         let cog_clone = Arc::clone(&cognitive);
         tokio::spawn(async move {

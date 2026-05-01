@@ -8,14 +8,13 @@ use std::io::{BufWriter, Write};
 use std::path::Path;
 use std::path::PathBuf;
 use std::process::Command;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 use anyhow::Context;
 use chrono::{NaiveDate, Utc};
 use clap::{Parser, Subcommand};
 use colored::Colorize;
-use directories::ProjectDirs;
-use vestige_core::{IngestInput, Storage};
+use vestige_core::{IngestInput, PortableImportMode, Storage};
 
 /// Vestige - Cognitive Memory System CLI
 #[derive(Parser)]
@@ -27,9 +26,15 @@ use vestige_core::{IngestInput, Storage};
     long_about = "Vestige is a cognitive memory system based on 130 years of memory research.\n\nIt implements FSRS-6, spreading activation, synaptic tagging, and more."
 )]
 struct Cli {
+    /// Use a specific Vestige data directory for this command.
+    #[arg(long, global = true, value_name = "DIR")]
+    data_dir: Option<PathBuf>,
+
     #[command(subcommand)]
     command: Commands,
 }
+
+static CLI_DB_PATH: OnceLock<PathBuf> = OnceLock::new();
 
 #[derive(Subcommand)]
 enum Commands {
@@ -52,7 +57,7 @@ enum Commands {
 
     /// Update Vestige binaries from the latest GitHub release
     Update {
-        /// Install a specific release tag instead of latest (example: v2.1.0)
+        /// Install a specific release tag instead of latest (example: v2.1.1)
         #[arg(long)]
         version: Option<String>,
 
@@ -90,6 +95,27 @@ enum Commands {
         /// Only export memories created after this date (YYYY-MM-DD)
         #[arg(long)]
         since: Option<String>,
+    },
+
+    /// Export an exact portable archive for Vestige-to-Vestige transfer
+    PortableExport {
+        /// Output archive path
+        output: PathBuf,
+    },
+
+    /// Import an exact portable archive
+    PortableImport {
+        /// Input archive path
+        input: PathBuf,
+        /// Merge into the current database instead of requiring an empty target
+        #[arg(long)]
+        merge: bool,
+    },
+
+    /// Two-way sync with a file-backed portable archive
+    Sync {
+        /// Sync archive path, often in Dropbox/iCloud/Syncthing/Git
+        archive: PathBuf,
     },
 
     /// Garbage collect stale memories below retention threshold
@@ -150,6 +176,13 @@ enum Commands {
 fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
 
+    if let Some(data_dir) = cli.data_dir {
+        let db_path = Storage::db_path_for_data_dir(data_dir)?;
+        CLI_DB_PATH
+            .set(db_path)
+            .map_err(|_| anyhow::anyhow!("data directory was initialized more than once"))?;
+    }
+
     match cli.command {
         Commands::Stats { tagging, states } => run_stats(tagging, states),
         Commands::Health => run_health(),
@@ -167,6 +200,9 @@ fn main() -> anyhow::Result<()> {
             tags,
             since,
         } => run_export(output, format, tags, since),
+        Commands::PortableExport { output } => run_portable_export(output),
+        Commands::PortableImport { input, merge } => run_portable_import(input, merge),
+        Commands::Sync { archive } => run_sync(archive),
         Commands::Gc {
             min_retention,
             max_age_days,
@@ -465,7 +501,7 @@ fn run_update(
 
 /// Run stats command
 fn run_stats(show_tagging: bool, show_states: bool) -> anyhow::Result<()> {
-    let storage = Storage::new(None)?;
+    let storage = open_storage()?;
     let stats = storage.get_stats()?;
 
     println!("{}", "=== Vestige Memory Statistics ===".cyan().bold());
@@ -499,8 +535,20 @@ fn run_stats(show_tagging: bool, show_states: bool) -> anyhow::Result<()> {
         stats.nodes_with_embeddings
     );
 
+    if let Some(model) = &stats.active_embedding_model {
+        println!("{}: {}", "Active Embedding Model".white().bold(), model);
+    }
+
     if let Some(model) = &stats.embedding_model {
-        println!("{}: {}", "Embedding Model".white().bold(), model);
+        println!("{}: {}", "Stored Embedding Model".white().bold(), model);
+    }
+
+    if stats.nodes_with_mismatched_embeddings > 0 {
+        println!(
+            "{}: {}",
+            "Mismatched Embeddings".white().bold(),
+            stats.nodes_with_mismatched_embeddings
+        );
     }
 
     if let Some(oldest) = stats.oldest_memory {
@@ -520,13 +568,13 @@ fn run_stats(show_tagging: bool, show_states: bool) -> anyhow::Result<()> {
 
     // Embedding coverage
     let embedding_coverage = if stats.total_nodes > 0 {
-        (stats.nodes_with_embeddings as f64 / stats.total_nodes as f64) * 100.0
+        (stats.nodes_with_active_embeddings as f64 / stats.total_nodes as f64) * 100.0
     } else {
         0.0
     };
     println!(
         "{}: {:.1}%",
-        "Embedding Coverage".white().bold(),
+        "Active Embedding Coverage".white().bold(),
         embedding_coverage
     );
 
@@ -651,7 +699,7 @@ fn print_distribution_bar(label: &str, count: usize, total: usize, color: &str) 
 
 /// Run health check
 fn run_health() -> anyhow::Result<()> {
-    let storage = Storage::new(None)?;
+    let storage = open_storage()?;
     let stats = storage.get_stats()?;
 
     println!("{}", "=== Vestige Health Check ===".cyan().bold());
@@ -690,13 +738,13 @@ fn run_health() -> anyhow::Result<()> {
 
     // Embedding coverage
     let embedding_coverage = if stats.total_nodes > 0 {
-        (stats.nodes_with_embeddings as f64 / stats.total_nodes as f64) * 100.0
+        (stats.nodes_with_active_embeddings as f64 / stats.total_nodes as f64) * 100.0
     } else {
         0.0
     };
     println!(
         "{}: {:.1}%",
-        "Embedding Coverage".white(),
+        "Active Embedding Coverage".white(),
         embedding_coverage
     );
     println!(
@@ -721,12 +769,16 @@ fn run_health() -> anyhow::Result<()> {
         warnings.push("Many memories are due for review");
     }
 
-    if stats.total_nodes > 0 && stats.nodes_with_embeddings == 0 {
-        warnings.push("No embeddings generated - semantic search unavailable");
+    if stats.total_nodes > 0 && stats.nodes_with_active_embeddings == 0 {
+        warnings.push("No active-model embeddings generated - semantic search unavailable");
     }
 
     if embedding_coverage < 50.0 && stats.total_nodes > 10 {
         warnings.push("Low embedding coverage - run consolidation to improve semantic search");
+    }
+
+    if stats.nodes_with_mismatched_embeddings > 0 {
+        warnings.push("Stored embeddings from another model are present - run consolidation after changing embedding models");
     }
 
     if !warnings.is_empty() {
@@ -749,9 +801,9 @@ fn run_health() -> anyhow::Result<()> {
         recommendations.push("Review due memories to strengthen retention.");
     }
 
-    if stats.nodes_with_embeddings < stats.total_nodes {
+    if stats.nodes_with_active_embeddings < stats.total_nodes {
         recommendations
-            .push("Run 'vestige consolidate' to generate embeddings for better semantic search.");
+            .push("Run 'vestige consolidate' to generate active-model embeddings for better semantic search.");
     }
 
     if stats.total_nodes > 100 && stats.average_retention < 0.7 {
@@ -788,7 +840,7 @@ fn run_consolidate() -> anyhow::Result<()> {
     println!("Running memory consolidation cycle...");
     println!();
 
-    let storage = Storage::new(None)?;
+    let storage = open_storage()?;
     let result = storage.run_consolidation()?;
 
     println!(
@@ -834,7 +886,49 @@ fn run_restore(backup_path: PathBuf) -> anyhow::Result<()> {
     println!("Loading backup from: {}", backup_path.display());
 
     // Read and parse backup
-    let backup_content = std::fs::read_to_string(&backup_path)?;
+    let backup_bytes = std::fs::read(&backup_path)?;
+    if backup_bytes.starts_with(b"SQLite format 3\0") {
+        anyhow::bail!(
+            "{} is a raw SQLite database backup, not a JSON restore file. Use portable-export/portable-import for cross-device transfer, or replace the database file manually while Vestige is stopped.",
+            backup_path.display()
+        );
+    }
+    let backup_content = String::from_utf8(backup_bytes)
+        .with_context(|| format!("{} is not UTF-8 JSON", backup_path.display()))?;
+
+    if let Ok(archive) = serde_json::from_str::<vestige_core::PortableArchive>(&backup_content)
+        && archive.archive_format == vestige_core::PORTABLE_ARCHIVE_FORMAT
+    {
+        println!("Detected portable archive.");
+        println!("{}: {}", "Format".white().bold(), archive.archive_format);
+        println!("{}: {}", "Schema".white().bold(), archive.schema_version);
+        println!("{}: {}", "Tables".white().bold(), archive.tables.len());
+        println!("{}: {}", "Rows".white().bold(), archive.total_rows());
+        println!();
+
+        let storage = open_storage()?;
+        let report = storage.import_portable_archive(&archive, PortableImportMode::EmptyOnly)?;
+
+        println!(
+            "{}: {}",
+            "Tables imported".white().bold(),
+            report.tables_imported
+        );
+        println!(
+            "{}: {}",
+            "Rows imported".white().bold(),
+            report.rows_imported
+        );
+        println!(
+            "{}: {}",
+            "Tables skipped".white().bold(),
+            report.tables_skipped
+        );
+        println!("{}: {}", "FTS rebuilt".white().bold(), report.fts_rebuilt);
+        println!();
+        println!("{}", "Portable restore complete.".green().bold());
+        return Ok(());
+    }
 
     #[derive(serde::Deserialize)]
     struct BackupWrapper {
@@ -857,16 +951,27 @@ fn run_restore(backup_path: PathBuf) -> anyhow::Result<()> {
         source: Option<String>,
     }
 
-    let wrapper: Vec<BackupWrapper> = serde_json::from_str(&backup_content)?;
-    let recall_result: RecallResult = serde_json::from_str(&wrapper[0].text)?;
-    let memories = recall_result.results;
+    let memories = if let Ok(wrapper) = serde_json::from_str::<Vec<BackupWrapper>>(&backup_content)
+    {
+        let first = wrapper.first().context("backup wrapper is empty")?;
+        let recall_result: RecallResult = serde_json::from_str(&first.text)?;
+        recall_result.results
+    } else if let Ok(recall_result) = serde_json::from_str::<RecallResult>(&backup_content) {
+        recall_result.results
+    } else if let Ok(memories) = serde_json::from_str::<Vec<MemoryBackup>>(&backup_content) {
+        memories
+    } else {
+        anyhow::bail!(
+            "Unrecognized backup format. Expected portable archive, MCP wrapper, RecallResult, or array of memories."
+        );
+    };
 
     println!("Found {} memories to restore", memories.len());
     println!();
 
     // Initialize storage
     println!("Initializing storage...");
-    let storage = Storage::new(None)?;
+    let storage = open_storage()?;
 
     println!("Generating embeddings and ingesting memories...");
     println!();
@@ -916,8 +1021,8 @@ fn run_restore(backup_path: PathBuf) -> anyhow::Result<()> {
     println!("{}: {}", "Total Nodes".white(), stats.total_nodes);
     println!(
         "{}: {}",
-        "With Embeddings".white(),
-        stats.nodes_with_embeddings
+        "Active Embeddings".white(),
+        stats.nodes_with_active_embeddings
     );
 
     Ok(())
@@ -925,9 +1030,20 @@ fn run_restore(backup_path: PathBuf) -> anyhow::Result<()> {
 
 /// Get the default database path
 fn get_default_db_path() -> anyhow::Result<PathBuf> {
-    let proj_dirs = ProjectDirs::from("com", "vestige", "core")
-        .ok_or_else(|| anyhow::anyhow!("Could not determine project directories"))?;
-    Ok(proj_dirs.data_dir().join("vestige.db"))
+    if let Some(path) = CLI_DB_PATH.get() {
+        Ok(path.clone())
+    } else {
+        Ok(Storage::default_db_path()?)
+    }
+}
+
+/// Open storage using the CLI-selected data directory, if one was provided.
+fn open_storage() -> anyhow::Result<Storage> {
+    if let Some(path) = CLI_DB_PATH.get() {
+        Ok(Storage::new(Some(path.clone()))?)
+    } else {
+        Ok(Storage::new(None)?)
+    }
 }
 
 /// Fetch all nodes from storage using pagination
@@ -963,7 +1079,7 @@ fn run_backup(output: PathBuf) -> anyhow::Result<()> {
     // Open storage to flush WAL before copying
     println!("Flushing WAL checkpoint...");
     {
-        let storage = Storage::new(None)?;
+        let storage = open_storage()?;
         // get_stats triggers a read so the connection is active, then drop flushes
         let _ = storage.get_stats()?;
     }
@@ -1050,7 +1166,7 @@ fn run_export(
         })
         .unwrap_or_default();
 
-    let storage = Storage::new(None)?;
+    let storage = open_storage()?;
     let all_nodes = fetch_all_nodes(&storage)?;
 
     // Apply filters
@@ -1141,6 +1257,145 @@ fn run_export(
     Ok(())
 }
 
+/// Run exact portable archive export.
+fn run_portable_export(output: PathBuf) -> anyhow::Result<()> {
+    println!("{}", "=== Vestige Portable Export ===".cyan().bold());
+    println!();
+
+    if let Some(parent) = output.parent()
+        && !parent.exists()
+    {
+        std::fs::create_dir_all(parent)?;
+    }
+
+    let storage = open_storage()?;
+    let archive = storage.export_portable_archive_to_path(&output)?;
+
+    let file_size = std::fs::metadata(&output)?.len();
+    let size_display = if file_size >= 1024 * 1024 {
+        format!("{:.2} MB", file_size as f64 / (1024.0 * 1024.0))
+    } else if file_size >= 1024 {
+        format!("{:.1} KB", file_size as f64 / 1024.0)
+    } else {
+        format!("{} bytes", file_size)
+    };
+
+    println!("{}: {}", "Archive".white().bold(), output.display());
+    println!("{}: {}", "Format".white().bold(), archive.archive_format);
+    println!("{}: {}", "Schema".white().bold(), archive.schema_version);
+    println!("{}: {}", "Tables".white().bold(), archive.tables.len());
+    println!("{}: {}", "Rows".white().bold(), archive.total_rows());
+    println!();
+    println!(
+        "{}",
+        format!(
+            "Portable export complete: {} ({})",
+            output.display(),
+            size_display
+        )
+        .green()
+        .bold()
+    );
+
+    Ok(())
+}
+
+/// Run exact portable archive import.
+fn run_portable_import(input: PathBuf, merge: bool) -> anyhow::Result<()> {
+    println!("{}", "=== Vestige Portable Import ===".cyan().bold());
+    println!();
+    println!("{}: {}", "Archive".white().bold(), input.display());
+    let mode = if merge {
+        PortableImportMode::Merge
+    } else {
+        PortableImportMode::EmptyOnly
+    };
+    println!(
+        "{}",
+        if merge {
+            "Mode: merge into existing database".yellow()
+        } else {
+            "Mode: empty database only".yellow()
+        }
+    );
+    println!();
+
+    let storage = open_storage()?;
+    let report = storage.import_portable_archive_from_path(&input, mode)?;
+
+    println!(
+        "{}: {}",
+        "Tables imported".white().bold(),
+        report.tables_imported
+    );
+    println!(
+        "{}: {}",
+        "Rows imported".white().bold(),
+        report.rows_imported
+    );
+    println!(
+        "{}: {}",
+        "Tables skipped".white().bold(),
+        report.tables_skipped
+    );
+    println!("{}: {}", "FTS rebuilt".white().bold(), report.fts_rebuilt);
+    if merge {
+        println!(
+            "{}: {} inserted, {} updated, {} deleted, {} skipped, {} kept local",
+            "Merge".white().bold(),
+            report.rows_inserted,
+            report.rows_updated,
+            report.rows_deleted,
+            report.rows_skipped,
+            report.conflicts_kept_local
+        );
+    }
+    println!();
+    println!("{}", "Portable import complete.".green().bold());
+
+    Ok(())
+}
+
+/// Run file-backed two-way sync.
+fn run_sync(archive: PathBuf) -> anyhow::Result<()> {
+    println!("{}", "=== Vestige File Sync ===".cyan().bold());
+    println!();
+    println!("{}: {}", "Archive".white().bold(), archive.display());
+
+    let storage = open_storage()?;
+    let report = storage.sync_portable_archive_file(&archive)?;
+
+    if let Some(pull) = &report.pull {
+        println!("{}", "Pull: merged remote archive".yellow());
+        println!(
+            "  {} inserted, {} updated, {} deleted, {} skipped, {} kept local",
+            pull.rows_inserted,
+            pull.rows_updated,
+            pull.rows_deleted,
+            pull.rows_skipped,
+            pull.conflicts_kept_local
+        );
+    } else {
+        println!(
+            "{}",
+            "Pull: archive does not exist yet; creating it".yellow()
+        );
+    }
+
+    println!("{}", "Push: wrote merged local state".yellow());
+    println!(
+        "{}",
+        format!(
+            "Sync complete: {} tables, {} rows",
+            report.pushed_tables, report.pushed_rows
+        )
+        .green()
+        .bold()
+    );
+
+    Ok(())
+}
+
 /// Run garbage collection command
 fn run_gc(
     min_retention: f64,
@@ -1151,7 +1406,7 @@ fn run_gc(
     println!("{}", "=== Vestige Garbage Collection ===".cyan().bold());
     println!();
 
-    let storage = Storage::new(None)?;
+    let storage = open_storage()?;
     let all_nodes = fetch_all_nodes(&storage)?;
     let now = Utc::now();
 
@@ -1327,7 +1582,7 @@ fn run_ingest(
         valid_until: None,
     };
 
-    let storage = Storage::new(None)?;
+    let storage = open_storage()?;
 
     // Try smart_ingest (PE Gating) if available, otherwise regular ingest
     #[cfg(all(feature = "embeddings", feature = "vector-search"))]
@@ -1381,7 +1636,7 @@ fn run_dashboard(port: u16, open_browser: bool) -> anyhow::Result<()> {
         format!("http://127.0.0.1:{}", port).cyan()
     );
 
-    let storage = Storage::new(None)?;
+    let storage = open_storage()?;
 
     // Try to initialize embeddings for search support
     #[cfg(feature = "embeddings")]
@@ -1412,7 +1667,7 @@ fn run_serve(port: u16, with_dashboard: bool, dashboard_port: u16) -> anyhow::Re
     println!("{}", "=== Vestige HTTP Server ===".cyan().bold());
     println!();
 
-    let storage = Storage::new(None)?;
+    let storage = open_storage()?;
 
     #[cfg(feature = "embeddings")]
     {

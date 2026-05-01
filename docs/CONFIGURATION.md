@@ -6,7 +6,7 @@
 
 ## First-Run Network Requirement
 
-Vestige downloads the **Nomic Embed Text v1.5** model (~130MB) from Hugging Face on first use.
+Vestige downloads the **Nomic Embed Text v1.5** model (~130MB) from Hugging Face on first use. Qwen3 embeddings are opt-in and download their own Hugging Face model when selected.
 
 **All subsequent runs are fully offline.**
 
@@ -25,6 +25,8 @@ Override with environment variable:
 export FASTEMBED_CACHE_PATH="/custom/path"
 ```
 
+Qwen3 currently uses Hugging Face Hub's Candle loader directly, so use the standard Hugging Face cache environment such as `HF_HOME` if you need to relocate that larger model cache.
+
 ---
 
 ## Environment Variables
@@ -32,6 +34,7 @@ export FASTEMBED_CACHE_PATH="/custom/path"
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `VESTIGE_DATA_DIR` | OS per-user data directory | Storage directory fallback; overridden by `--data-dir`; database lives at `<dir>/vestige.db` |
+| `VESTIGE_EMBEDDING_MODEL` | `nomic-v1.5` | Embedding backend selector. Use `qwen3-0.6b` with a build that enables `qwen3-embeddings` |
 | `RUST_LOG` | `info` (via tracing-subscriber) | Log verbosity + per-module filtering |
 | `FASTEMBED_CACHE_PATH` | `./.fastembed_cache` | Embedding model cache location |
 | `VESTIGE_DASHBOARD_PORT` | `3927` | Dashboard HTTP + WebSocket port |
@@ -50,6 +53,7 @@ export FASTEMBED_CACHE_PATH="/custom/path"
 ```bash
 vestige-mcp --data-dir /custom/path   # Custom storage location
 VESTIGE_DATA_DIR=~/.vestige vestige-mcp # Env fallback storage location
+VESTIGE_DATA_DIR=./.vestige vestige stats # Point the CLI at the same custom DB
 vestige-mcp --help                     # Show all options
 ```
 
@@ -66,6 +70,10 @@ vestige stats --states     # Cognitive state distribution
 vestige health             # System health check
 vestige consolidate        # Run memory maintenance
 vestige restore <file>     # Restore from backup
+vestige portable-export <file>         # Exact Vestige-to-Vestige archive
+vestige portable-import <file>         # Import exact archive into an empty database
+vestige portable-import <file> --merge # Merge exact archive into this database
+vestige sync <file>                    # Pull/merge/push through a file backend
 ```
 
 ---
@@ -169,7 +177,7 @@ vestige update
 
 **Pin to specific version:**
 ```bash
-vestige update --version v2.1.0
+vestige update --version v2.1.1
 ```
 
 **Check your version:**

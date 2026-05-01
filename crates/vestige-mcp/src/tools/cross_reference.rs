@@ -513,6 +513,7 @@ pub async fn execute(
     }
 
     let mut ranked = results;
+    #[cfg(feature = "vector-search")]
     if let Ok(mut cog) = cognitive.try_lock() {
         let candidates: Vec<_> = ranked
             .iter()

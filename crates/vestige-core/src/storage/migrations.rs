@@ -59,6 +59,11 @@ pub const MIGRATIONS: &[Migration] = &[
         description: "v2.0.7 Cleanup: drop dead knowledge_edges and compressed_memories tables",
         up: MIGRATION_V11_UP,
     },
+    Migration {
+        version: 12,
+        description: "v2.1.1 Sync: tombstones for merge-capable portable storage",
+        up: MIGRATION_V12_UP,
+    },
 ];
 
 /// A database migration
@@ -681,6 +686,26 @@ DROP TABLE IF EXISTS compressed_memories;
 UPDATE schema_version SET version = 11, applied_at = datetime('now');
 "#;
 
+/// V12: Merge-capable sync tombstones.
+///
+/// Portable sync needs to propagate deletions between devices. `knowledge_nodes`
+/// remains the source of truth for live memories; this table records deletes so
+/// another device can remove the same memory during a merge import.
+const MIGRATION_V12_UP: &str = r#"
+CREATE TABLE IF NOT EXISTS sync_tombstones (
+    table_name TEXT NOT NULL,
+    row_id TEXT NOT NULL,
+    deleted_at TEXT NOT NULL,
+    reason TEXT,
+    PRIMARY KEY (table_name, row_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_sync_tombstones_deleted_at
+ON sync_tombstones(deleted_at);
+
+UPDATE schema_version SET version = 12, applied_at = datetime('now');
+"#;
+
 /// Get current schema version from database
 pub fn get_current_version(conn: &rusqlite::Connection) -> rusqlite::Result<u32> {
     conn.query_row(
@@ -730,17 +755,17 @@ mod tests {
     /// version after `apply_migrations` runs all migrations end-to-end, and
     /// neither of the dead tables V11 drops must exist afterwards.
     #[test]
-    fn test_apply_migrations_advances_to_v11_and_drops_dead_tables() {
+    fn test_apply_migrations_advances_to_v12_and_drops_dead_tables() {
         let conn = rusqlite::Connection::open_in_memory().expect("open in-memory");
 
         // Pre-requisite: schema_version must be bootstrapped by V1.
         apply_migrations(&conn).expect("apply_migrations succeeds");
 
-        // 1. schema_version advanced to V11
+        // 1. schema_version advanced to V12
         let version = get_current_version(&conn).expect("read schema_version");
         assert_eq!(
-            version, 11,
-            "schema_version must be 11 after all migrations"
+            version, 12,
+            "schema_version must be 12 after all migrations"
         );
 
         // 2. knowledge_edges is gone (V11 drops it)
@@ -768,6 +793,19 @@ mod tests {
             compressed_memories_rows, 0,
             "compressed_memories table must be dropped by V11"
         );
+
+        // 4. sync_tombstones exists (V12 creates it)
+        let sync_tombstone_rows: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='sync_tombstones'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("query sqlite_master");
+        assert_eq!(
+            sync_tombstone_rows, 1,
+            "sync_tombstones table must be created by V12"
+        );
     }
 
     /// V11 must be idempotent on replay — if the tables were already dropped
@@ -789,6 +827,6 @@ mod tests {
         apply_migrations(&conn).expect("V11 replay must be idempotent");
 
         let version = get_current_version(&conn).expect("read schema_version");
-        assert_eq!(version, 11, "schema_version back at 11 after replay");
+        assert_eq!(version, 12, "schema_version back at 12 after replay");
     }
 }

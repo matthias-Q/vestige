@@ -305,7 +305,8 @@ pub async fn execute(
                 .unwrap_or(std::cmp::Ordering::Equal)
         });
 
-        // Rerank the remaining candidates
+        // Rerank the remaining candidates when the vector-search search stack is enabled.
+        #[cfg(feature = "vector-search")]
         let reranked_results: Vec<vestige_core::SearchResult> = if rerank_candidates.is_empty() {
             Vec::new()
         } else if let Ok(mut cog) = cognitive.try_lock() {
@@ -330,6 +331,11 @@ pub async fn execute(
                 .cloned()
                 .collect()
         };
+        #[cfg(not(feature = "vector-search"))]
+        let reranked_results: Vec<vestige_core::SearchResult> = rerank_candidates
+            .into_iter()
+            .map(|(result, _)| result)
+            .collect();
 
         // Merge: bypass first, then reranked, trim to limit
         filtered_results = bypass_results;
@@ -340,6 +346,7 @@ pub async fn execute(
     // ====================================================================
     // STAGE 3: Temporal boosting (recency + validity windows)
     // ====================================================================
+    #[cfg(feature = "vector-search")]
     if let Ok(cog) = cognitive.try_lock() {
         for result in &mut filtered_results {
             let recency = cog.temporal_searcher.recency_boost(result.node.created_at);

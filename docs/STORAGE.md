@@ -24,6 +24,44 @@ Override precedence:
 
 ---
 
+## Moving Memories Between Devices
+
+For device-to-device migration, use a portable archive instead of the normal JSON export:
+
+```bash
+# On the source machine
+vestige portable-export ~/Desktop/vestige-portable.json
+
+# On the destination machine, before adding memories
+vestige portable-import ~/Desktop/vestige-portable.json
+```
+
+Portable archives preserve raw Vestige storage rows: memory IDs, FSRS state, graph connections, suppression state, timestamps, audit history, and embedding blobs.
+
+For one-time migration, keep the conservative empty-database import:
+
+```bash
+vestige portable-import ~/Desktop/vestige-portable.json
+```
+
+For cross-device sync, use merge mode or the file-backed sync command:
+
+```bash
+# Merge a portable archive into an existing database.
+vestige portable-import ~/Dropbox/vestige/portable.json --merge
+
+# Pull, merge, and push through a shared archive file.
+vestige sync ~/Dropbox/vestige/portable.json
+```
+
+`vestige sync` uses the same pluggable portable-sync backend interface as the core library. v2.1.1 ships a file backend, which works with Dropbox, iCloud Drive, Syncthing, Git, network shares, or any folder-sync system. The merge algorithm applies delete tombstones, keeps newer local memories on timestamp conflicts, preserves stable IDs, rebuilds FTS after import, and writes the pushed archive atomically when the filesystem supports rename.
+
+When using the MCP `export` tool with `format: "portable"`, Vestige writes the archive under the active data directory's `exports/` folder. The MCP `restore` tool only reads from that `exports/` or `backups/` folder by default; pass `allowAnyPath: true` only for a trusted local file you selected manually.
+
+The regular `vestige export` / `vestige restore` path remains useful for human-readable backups, partial exports, and older files, but it re-ingests memory content and does not preserve every storage-level relationship.
+
+---
+
 ## Storage Modes
 
 ### Option 1: Global Memory (Default)
@@ -68,6 +106,13 @@ Add to your project's `.claude/settings.local.json`:
 This creates `.vestige/vestige.db` in your project root. Add `.vestige/` to `.gitignore`.
 
 If both `VESTIGE_DATA_DIR` and `--data-dir` are set, the CLI flag wins. Use the env var for a machine-wide default and the CLI flag for per-client or per-project overrides.
+
+The `vestige` CLI also honors `VESTIGE_DATA_DIR`, so use the same directory when inspecting or exporting a custom MCP instance:
+
+```bash
+VESTIGE_DATA_DIR=./.vestige vestige stats
+VESTIGE_DATA_DIR=./.vestige vestige portable-export ./vestige-portable.json
+```
 
 **Multiple Named Instances:**
 
@@ -132,7 +177,7 @@ Claude Code config - for "Storm":
 
 ## Data Safety
 
-**Important:** Vestige stores data locally with no cloud sync, redundancy, or automatic backup.
+**Important:** Vestige stores data locally. v2.1.1 adds user-controlled file-backed sync through `vestige sync`, but Vestige does not run a hosted cloud service, background replication daemon, or automatic backup for you.
 
 | Use Case | Risk Level | Recommendation |
 |----------|------------|----------------|

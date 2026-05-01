@@ -20,12 +20,21 @@ Built on 130 years of memory research — FSRS-6 spaced repetition, prediction e
 
 ---
 
+## What's New in v2.1.1 "Portable Sync"
+
+v2.1.1 focuses on the biggest post-launch ask: move memories between machines without losing cognitive state. It also adds opt-in Qwen3 embeddings for higher-recall local retrieval.
+
+- **Exact portable archives.** `vestige portable-export` / `vestige portable-import` preserve IDs, FSRS state, graph edges, suppression state, audit rows, and embedding blobs for Vestige-to-Vestige device transfer.
+- **Sync-safe merge storage.** `vestige portable-import --merge` and `vestige sync <archive>` merge non-empty databases, apply delete tombstones, keep newer local memories, rebuild FTS, and push through a pluggable portable-sync backend. v2.1.1 ships the file backend for Dropbox, iCloud, Syncthing, Git, and shared folders.
+- **Qwen3 embeddings.** Build with `qwen3-embeddings`, set `VESTIGE_EMBEDDING_MODEL=qwen3-0.6b`, and run `vestige consolidate` to re-embed existing memories.
+- **Model-aware retrieval.** Vestige now avoids comparing Qwen and Nomic vectors in the same search/dedup path.
+
 ## What's New in v2.1.0 "Cognitive Sandwich Goes Local"
 
-v2.1.0 adds an opt-in Claude Code hook harness around the existing Vestige MCP server. The MCP tool surface and database schema stay backward compatible, while the new local Sanhedrin verifier and preflight hooks can inject trusted memory context before Claude answers and check drafts against high-trust Vestige evidence before delivery.
+v2.1.0 adds an opt-in Claude Code hook harness around the existing Vestige MCP server. The MCP tool surface and database schema stay backward compatible, while preflight hooks can inject trusted memory context before Claude answers. The heavyweight Sanhedrin verifier is optional and can be enabled separately.
 
-- **Local Sanhedrin Executioner.** The post-response verifier now runs through `mlx_lm.server` with `mlx-community/Qwen3.6-35B-A3B-4bit` by default, so the veto layer can run offline on Apple Silicon without Anthropic API calls.
-- **One-command Cognitive Sandwich installer.** `scripts/install-sandwich.sh` stages hooks, agents, and a launchd plist, merges the Claude Code hooks block, and prints real verification commands.
+- **Optional Sanhedrin Executioner.** The post-response verifier is off by default. Users can enable it with an OpenAI-compatible endpoint on x86/Linux/Intel Mac, or add `--with-launchd` on Apple Silicon to run the local MLX Qwen backend.
+- **One-command Cognitive Sandwich installer.** `scripts/install-sandwich.sh` stages hook files and agents by default, removes old Vestige hook wiring, and leaves all Claude Code hook layers plus the 19 GB model path opt-in.
 - **Pulse hook backed by `/api/changelog`.** Fresh dream and connection events can be injected into the next Claude Code prompt context without blocking the prompt.
 - **`VESTIGE_DATA_DIR` support.** `--data-dir` now has an env-var fallback, tilde expansion, secure directory creation, and clear precedence docs.
 - **NPM release wrapper fixed.** `vestige-mcp-server@2.1.0` now downloads binaries from the matching `v2.1.0` GitHub release tag instead of an old hardcoded release.
@@ -211,7 +220,7 @@ Vestige v2.0 ships with a real-time 3D visualization of your AI's memory. Every 
 
 **Tech:** SvelteKit 2 + Svelte 5 + Three.js + Tailwind CSS 4 + WebSocket
 
-The dashboard runs automatically at `http://localhost:3927/dashboard` when the MCP server starts.
+Run `vestige dashboard` to open `http://localhost:3927/dashboard`, or set `VESTIGE_DASHBOARD_ENABLED=true` to start it with the MCP server.
 
 ---
 
@@ -335,8 +344,8 @@ This isn't a key-value store with an embedding model bolted on. Vestige implemen
 | `consolidate` | Run FSRS-6 decay cycle (also auto-runs every 6 hours) |
 | `memory_timeline` | Browse chronologically, grouped by day |
 | `memory_changelog` | Audit trail of state transitions |
-| `backup` / `export` / `gc` | Database backup, JSON export, garbage collection |
-| `restore` | Restore from JSON backup |
+| `backup` / `export` / `gc` | Database backup, JSON/JSONL/portable export, garbage collection |
+| `restore` | Restore from JSON backup or portable archive |
 
 ### Deep Reference (v2.0.4)
 | Tool | What It Does |
@@ -382,7 +391,7 @@ At the start of every session:
 | **Language** | Rust 2024 edition (MSRV 1.91) |
 | **Codebase** | 80,000+ lines, 1,292 tests (366 core + 425 mcp + 497 e2e + 4 doctests) |
 | **Binary size** | ~20MB |
-| **Embeddings** | Nomic Embed Text v1.5 (768d → 256d Matryoshka, 8192 context) |
+| **Embeddings** | Nomic Embed Text v1.5 by default (768d -> 256d Matryoshka, 8192 context); Qwen3 0.6B optional |
 | **Vector search** | USearch HNSW (20x faster than FAISS) |
 | **Reranker** | Jina Reranker v1 Turbo (38M params, +15-20% precision) |
 | **Storage** | SQLite + FTS5 (optional SQLCipher encryption) |
@@ -395,17 +404,9 @@ At the start of every session:
 ### Optional Features
 
 ```bash
-# Metal GPU acceleration (Apple Silicon — faster embedding inference)
-cargo build --release -p vestige-mcp --features metal
-
-# Nomic Embed Text v2 MoE (475M params, 305M active, 8 experts)
-cargo build --release -p vestige-mcp --features nomic-v2
-
-# Qwen3 Reranker (Candle backend, high-precision cross-encoder)
-cargo build --release -p vestige-mcp --features qwen3-reranker
-
-# SQLCipher encryption
-cargo build --release -p vestige-mcp --no-default-features --features encryption,embeddings,vector-search
+# Qwen3 embeddings (Candle backend; add metal on Apple Silicon)
+cargo build --release -p vestige-mcp --features qwen3-embeddings,metal
+VESTIGE_EMBEDDING_MODEL=qwen3-0.6b vestige consolidate
 ```
 
 ---
@@ -419,6 +420,10 @@ vestige stats --states           # Cognitive state breakdown
 vestige health                   # System health check
 vestige consolidate              # Run memory maintenance
 vestige restore <file>           # Restore from backup
+vestige portable-export <file>         # Exact cross-device archive
+vestige portable-import <file>         # Import archive into an empty database
+vestige portable-import <file> --merge # Merge archive into this database
+vestige sync <file>                    # Pull/merge/push via file backend
 vestige dashboard                # Open 3D dashboard in browser
 ```
 
@@ -465,7 +470,7 @@ Cache: macOS `~/Library/Caches/com.vestige.core/fastembed` | Linux `~/.cache/ves
 <details>
 <summary>Dashboard not loading</summary>
 
-The dashboard starts automatically on port 3927 when the MCP server runs. Check:
+Run `vestige dashboard` or set `VESTIGE_DASHBOARD_ENABLED=true`, then check:
 ```bash
 curl http://localhost:3927/api/health
 # Should return {"status":"healthy",...}
