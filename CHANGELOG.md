@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - **Dream connection persistence cap** — dense single-domain dreams now persist every connection discovered in that run instead of losing everything beyond the old 1,000-entry live buffer. The live dreamer buffer now keeps up to 200,000 high-scoring recent connections, and the MCP `dream` tool exposes `min_similarity` for corpus-specific tuning.
+- **Embedding-model upgrade repair** — `vestige consolidate` now re-embeds every missing or active-model-mismatched memory in one pass, so v1/v2 mixed stores are no longer left partially unreachable after only the first 100 legacy embeddings are regenerated.
 
 ## [2.1.1] - 2026-05-01 — "Portable Sync"
 

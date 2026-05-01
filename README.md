@@ -26,7 +26,7 @@ v2.1.1 focuses on the biggest post-launch ask: move memories between machines wi
 
 - **Exact portable archives.** `vestige portable-export` / `vestige portable-import` preserve IDs, FSRS state, graph edges, suppression state, audit rows, and embedding blobs for Vestige-to-Vestige device transfer.
 - **Sync-safe merge storage.** `vestige portable-import --merge` and `vestige sync <archive>` merge non-empty databases, apply delete tombstones, keep newer local memories, rebuild FTS, and push through a pluggable portable-sync backend. v2.1.1 ships the file backend for Dropbox, iCloud, Syncthing, Git, and shared folders.
-- **Qwen3 embeddings.** Build with `qwen3-embeddings`, set `VESTIGE_EMBEDDING_MODEL=qwen3-0.6b`, and run `vestige consolidate` to re-embed existing memories.
+- **Qwen3 embeddings.** Build with `qwen3-embeddings`, set `VESTIGE_EMBEDDING_MODEL=qwen3-0.6b`, and run `vestige consolidate` to re-embed existing memories. `vestige health` reports mixed-model stores before search quality is affected.
 - **Model-aware retrieval.** Vestige now avoids comparing Qwen and Nomic vectors in the same search/dedup path.
 
 ## What's New in v2.1.0 "Cognitive Sandwich Goes Local"
